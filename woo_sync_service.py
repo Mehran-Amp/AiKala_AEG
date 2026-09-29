@@ -914,6 +914,9 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
         except urllib.error.HTTPError as he:
             err_body = he.read().decode("utf-8", errors="ignore")
             logger.debug(f"⚠️ [WOO AI DESC HTTP {he.code}] Model {model_name} for '{pname}': {err_body[:100]}")
+            if he.code == 429:
+                logger.warning(f"⏳ [RATE LIMIT 429] سقف سهمیه مدل {model_name}؛ ۳۰ ثانیه استراحت خودکار و چرخش به مدل‌های سبک‌تر پشتیبان...")
+                time.sleep(30.0)
             continue
         except Exception as e:
             logger.debug(f"⚠️ [WOO AI DESC] Model {model_name} failed for '{pname}': {e}")
@@ -1029,6 +1032,11 @@ def generate_woo_key_highlights(product: dict, specs: Dict[str, str]) -> str:
                         if res_text:
                             product["ai_highlights"] = res_text
                             return res_text
+        except urllib.error.HTTPError as he:
+            if he.code == 429:
+                logger.warning(f"⏳ [RATE LIMIT 429] سقف سهمیه مدل {model_name} در نکات کلیدی؛ ۳۰ ثانیه استراحت خودکار و چرخش مدل...")
+                time.sleep(30.0)
+            continue
         except Exception:
             continue
     return ""
@@ -1181,6 +1189,11 @@ def generate_woo_seo_faq(product: dict, specs: Dict[str, str]) -> Tuple[str, str
                                 if isinstance(parsed, list) and len(parsed) >= 2:
                                     default_faq = parsed
                                     break
+                    except urllib.error.HTTPError as he:
+                        if he.code == 429:
+                            logger.warning(f"⏳ [RATE LIMIT 429] سقف سهمیه مدل {m} در FAQ؛ ۳۰ ثانیه استراحت خودکار...")
+                            time.sleep(30.0)
+                        continue
                     except Exception:
                         continue
 

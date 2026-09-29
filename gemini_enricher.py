@@ -667,9 +667,10 @@ def call_gemini_api_with_error(api_key: str, product: dict) -> Tuple[Optional[Di
                     model_exhausted = True
                     break
                 if he.code == 429:
-                    last_error = f"سقف سهمیه مدل {model_name} موقتاً تکمیل است (Rate Limit 429). سوییچ به مدل بعدی..."
+                    last_error = f"سقف سهمیه مدل {model_name} موقتاً تکمیل است (Rate Limit 429). استراحت ۳۰ ثانیه‌ای و سوئیچ به مدل پشتیبان..."
+                    logger.warning(f"⏳ [GEMINI 429] استراحت ۳۰ ثانیه‌ای و سوئیچ به مدل پشتیبان (مانند flash-lite)...")
                     model_exhausted = True
-                    time.sleep(0.3)
+                    time.sleep(30.0)
                     break
             except Exception as e:
                 last_error = str(e)
