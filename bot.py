@@ -2635,12 +2635,13 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             return
         await admin_woo_settings_menu(update, context)
 
-    elif data == "adm_woo_toggle_ai_provider":
+    elif data.startswith("adm_woo_toggle_ai_provider"):
         if not is_admin(update.effective_user.id):
             await query.answer("⛔️ این بخش تنها در اختیارات ادمین می‌باشد.", show_alert=True)
             return
         from admin_panel import admin_woo_toggle_ai_provider_handler
-        await admin_woo_toggle_ai_provider_handler(update, context)
+        src = "hub" if "|hub" in data else "settings"
+        await admin_woo_toggle_ai_provider_handler(update, context, source=src)
 
     elif data == "adm_woo_toggle_status":
         if not is_admin(update.effective_user.id):

@@ -1701,5 +1701,6 @@ def get_woo_sync_stats() -> dict:
         "last_sync_time": settings.get("last_sync_time", "هنوز انجام نشده"),
         "last_price_sync_time": settings.get("last_price_sync_time", "هنوز انجام نشده"),
         "default_status": settings.get("default_publish_status", "draft"),
-        "auto_sync_enabled": settings.get("auto_sync_enabled", True)
+        "auto_sync_enabled": settings.get("auto_sync_enabled", True),
+        "ai_provider": settings.get("ai_provider", "gemini")
     }

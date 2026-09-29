@@ -4374,6 +4374,9 @@ async def admin_woo_hub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     root_id = stats.get('root_category_id', 0)
     root_str = f"#{root_id}" if root_id > 0 else "در اولین ارسال ساخته می‌شود"
     auto_sync_str = "🟢 فعال (ساعات نامتقارن)" if stats.get('auto_sync_enabled') else "🔴 غیرفعال"
+    ai_provider = stats.get("ai_provider", "gemini")
+    ai_provider_label = "♊️ گوگل جمینای (Gemini)" if ai_provider == "gemini" else "🤖 دیپ‌سیک (DeepSeek)"
+    next_ai_label = "DeepSeek ➔" if ai_provider == "gemini" else "Gemini ➔"
 
     msg = (
         "🌐 <b>سامانه همگام‌سازی کاتالوگ با ووکامرس (aegkala.com)</b>\n"
@@ -4384,7 +4387,8 @@ async def admin_woo_hub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"▫️ 🌳 منتشر شده در شاخه <b>AiKala:</b> <code>{stats['published_count']:,} کالا</code>\n"
         f"▫️ 📦 آماده ارسال به سایت: <b>{stats['ready_to_send_count']:,} کالا</b>\n"
         f"▫️ ⚠️ در صف بازبینی دستی: <b>{stats['review_count']} کالا</b>\n\n"
-        "⚙️ <b>تنظیمات فنی اتصال:</b>\n"
+        "⚙️ <b>تنظیمات فنی و هوش مصنوعی:</b>\n"
+        f"▫️ 🤖 <b>موتور تولید محتوای هوشمند:</b> <b>{ai_provider_label}</b> (پیش‌فرض: Gemini)\n"
         f"▫️ شناسه دسته ریشه <b>AiKala</b>: <code>{root_str}</code>\n"
         f"▫️ وضعیت پیش‌فرض انتشار: <b>{stats['default_status'].upper()}</b>\n"
         f"▫️ بروزرسانی خودکار قیمت‌ها: <b>{auto_sync_str}</b>\n"
@@ -4399,6 +4403,9 @@ async def admin_woo_hub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         [
             InlineKeyboardButton("🧪 تست و ارسال تک‌محصول", callback_data="adm_woo_test_prompt"),
             InlineKeyboardButton("⚡️ بروزرسانی آنی قیمت‌ها", callback_data="adm_woo_price_sync")
+        ],
+        [
+            InlineKeyboardButton(f"🤖 تغییر موتور هوش مصنوعی سایت ({next_ai_label})", callback_data="adm_woo_toggle_ai_provider|hub")
         ],
         [
             InlineKeyboardButton(f"📋 صف بازبینی و تایید دستی ({stats['review_count']} ⚠️)", callback_data="adm_woo_review_queue"),
@@ -4758,7 +4765,7 @@ async def admin_woo_settings_menu(update: Update, context: ContextTypes.DEFAULT_
     await query.edit_message_text(msg, reply_markup=kb, parse_mode="HTML")
 
 
-async def admin_woo_toggle_ai_provider_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_woo_toggle_ai_provider_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, source: str = "settings"):
     """تغییر موتور هوش مصنوعی ووکامرس بین Gemini و DeepSeek"""
     query = update.callback_query
     from woo_sync_service import get_woo_settings, save_woo_settings
@@ -4768,8 +4775,11 @@ async def admin_woo_toggle_ai_provider_handler(update: Update, context: ContextT
     settings["ai_provider"] = new_provider
     save_woo_settings(settings)
     label = "دیپ‌سیک (DeepSeek)" if new_provider == "deepseek" else "گوگل جمینای (Gemini)"
-    await query.answer(f"موتور هوش مصنوعی محصولات ووکامرس به {label} تغییر یافت.", show_alert=True)
-    await admin_woo_settings_menu(update, context)
+    await query.answer(f"موتور هوش مصنوعی ووکامرس به {label} تغییر یافت.", show_alert=True)
+    if source == "hub" or (query and query.data and "|hub" in query.data):
+        await admin_woo_hub_menu(update, context)
+    else:
+        await admin_woo_settings_menu(update, context)
 
 
 async def admin_woo_toggle_status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
