@@ -593,19 +593,12 @@ def call_gemini_api_with_error(api_key: str, product: dict) -> Tuple[Optional[Di
     pname = product.get("name", "")
     last_error = "پاسخی از مدل دریافت نشد."
 
-    # منطق چرخش مدل‌ها برای استخراج مشخصات فنی: اولویت با flash-lite سپس flash و سری ۳
+    # منطق چرخش مدل‌ها برای استخراج مشخصات فنی: مدل‌های رسمی و پایدار گوگل
     models_to_try = [
-        "gemini-2.5-flash-lite",
         "gemini-2.5-flash",
-        "gemini-3.8-flash",
-        "gemini-3.7-flash",
-        "gemini-3.6-flash",
-        "gemini-3.5-flash",
-        "gemini-3.1-flash-lite",
-        "gemini-3.1-pro-preview",
-        "gemini-flash-lite-latest",
-        "gemini-flash-latest",
-        "gemini-pro-latest"
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash"
     ]
     models_to_try = list(dict.fromkeys(models_to_try))
 

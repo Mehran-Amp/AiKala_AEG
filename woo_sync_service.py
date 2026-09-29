@@ -900,15 +900,8 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
     models_to_try = [
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
-        "gemini-3.8-flash",
-        "gemini-3.7-flash",
-        "gemini-3.6-flash",
-        "gemini-3.5-flash",
-        "gemini-3.1-flash-lite",
-        "gemini-3.1-pro-preview",
-        "gemini-flash-lite-latest",
-        "gemini-flash-latest",
-        "gemini-pro-latest"
+        "gemini-2.0-flash",
+        "gemini-1.5-flash"
     ]
     models_to_try = list(dict.fromkeys(models_to_try))
 
@@ -920,6 +913,7 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
         }
     }
     
+    slept_for_429 = False
     for model_name in models_to_try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
         try:
@@ -942,8 +936,13 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
             err_body = he.read().decode("utf-8", errors="ignore")
             logger.debug(f"⚠️ [WOO AI DESC HTTP {he.code}] Model {model_name} for '{pname}': {err_body[:100]}")
             if he.code == 429:
-                logger.warning(f"⏳ [RATE LIMIT 429] سقف سهمیه مدل {model_name}؛ ۳۰ ثانیه استراحت خودکار و چرخش به مدل‌های سبک‌تر پشتیبان...")
-                time.sleep(30.0)
+                if not slept_for_429:
+                    logger.warning(f"⏳ [RATE LIMIT 429] سقف سهمیه مدل {model_name}؛ ۳۰ ثانیه استراحت خودکار و چرخش به مدل‌های سبک‌تر پشتیبان...")
+                    time.sleep(30.0)
+                    slept_for_429 = True
+                else:
+                    logger.debug(f"⚠️ [RATE LIMIT 429] Model {model_name} still throttled.")
+                    break
             continue
         except Exception as e:
             logger.debug(f"⚠️ [WOO AI DESC] Model {model_name} failed for '{pname}': {e}")
@@ -1030,21 +1029,15 @@ def generate_woo_key_highlights(product: dict, specs: Dict[str, str]) -> str:
     models_to_try = [
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
-        "gemini-3.8-flash",
-        "gemini-3.7-flash",
-        "gemini-3.6-flash",
-        "gemini-3.5-flash",
-        "gemini-3.1-flash-lite",
-        "gemini-3.1-pro-preview",
-        "gemini-flash-lite-latest",
-        "gemini-flash-latest",
-        "gemini-pro-latest"
+        "gemini-2.0-flash",
+        "gemini-1.5-flash"
     ]
     models_to_try = list(dict.fromkeys(models_to_try))
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.2, "maxOutputTokens": 600}
     }
+    slept_for_429 = False
     for model_name in models_to_try:
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
@@ -1061,8 +1054,12 @@ def generate_woo_key_highlights(product: dict, specs: Dict[str, str]) -> str:
                             return res_text
         except urllib.error.HTTPError as he:
             if he.code == 429:
-                logger.warning(f"⏳ [RATE LIMIT 429] سقف سهمیه مدل {model_name} در نکات کلیدی؛ ۳۰ ثانیه استراحت خودکار و چرخش مدل...")
-                time.sleep(30.0)
+                if not slept_for_429:
+                    logger.warning(f"⏳ [RATE LIMIT 429] سقف سهمیه مدل {model_name} در نکات کلیدی؛ ۳۰ ثانیه استراحت خودکار...")
+                    time.sleep(30.0)
+                    slept_for_429 = True
+                else:
+                    break
             continue
         except Exception:
             continue
@@ -1188,17 +1185,11 @@ def generate_woo_seo_faq(product: dict, specs: Dict[str, str]) -> Tuple[str, str
                 models_to_try = [
                     "gemini-2.5-flash",
                     "gemini-2.5-flash-lite",
-                    "gemini-3.8-flash",
-                    "gemini-3.7-flash",
-                    "gemini-3.6-flash",
-                    "gemini-3.5-flash",
-                    "gemini-3.1-flash-lite",
-                    "gemini-3.1-pro-preview",
-                    "gemini-flash-lite-latest",
-                    "gemini-flash-latest",
-                    "gemini-pro-latest"
+                    "gemini-2.0-flash",
+                    "gemini-1.5-flash"
                 ]
                 models_to_try = list(dict.fromkeys(models_to_try))
+                slept_for_429 = False
                 for m in models_to_try:
                     try:
                         url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={api_key}"
@@ -1218,8 +1209,12 @@ def generate_woo_seo_faq(product: dict, specs: Dict[str, str]) -> Tuple[str, str
                                     break
                     except urllib.error.HTTPError as he:
                         if he.code == 429:
-                            logger.warning(f"⏳ [RATE LIMIT 429] سقف سهمیه مدل {m} در FAQ؛ ۳۰ ثانیه استراحت خودکار...")
-                            time.sleep(30.0)
+                            if not slept_for_429:
+                                logger.warning(f"⏳ [RATE LIMIT 429] سقف سهمیه مدل {m} در FAQ؛ ۳۰ ثانیه استراحت خودکار...")
+                                time.sleep(30.0)
+                                slept_for_429 = True
+                            else:
+                                break
                         continue
                     except Exception:
                         continue

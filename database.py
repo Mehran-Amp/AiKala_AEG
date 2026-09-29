@@ -303,8 +303,25 @@ class Database:
                     await db.execute("ALTER TABLE orders ADD COLUMN total_price TEXT DEFAULT '0';")
                 if "shipping_method" not in ord_columns:
                     await db.execute("ALTER TABLE orders ADD COLUMN shipping_method TEXT DEFAULT 'freight';")
+
+                # مهاجرت جدول کارشناسان پشتیبانی
+                sa_cursor = await db.execute("PRAGMA table_info(support_agents);")
+                sa_columns = {row[1] for row in await sa_cursor.fetchall()}
+                if sa_columns:
+                    sa_extra = [
+                        ("title", "TEXT DEFAULT ''"),
+                        ("telegram_username", "TEXT DEFAULT ''"),
+                        ("phone", "TEXT DEFAULT ''"),
+                        ("working_hours", "TEXT DEFAULT '۹ الی ۲۳'"),
+                        ("is_active", "INTEGER DEFAULT 1"),
+                        ("sort_order", "INTEGER DEFAULT 0"),
+                        ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+                    ]
+                    for col_name, col_def in sa_extra:
+                        if col_name not in sa_columns:
+                            await db.execute(f"ALTER TABLE support_agents ADD COLUMN {col_name} {col_def};")
             except Exception as e:
-                logger.warning(f"Orders/Requests auto-migration note: {e}")
+                logger.warning(f"Orders/Requests/Support auto-migration note: {e}")
 
             await db.commit()
 
@@ -1058,10 +1075,25 @@ class Database:
             params = []
             if active_only:
                 query += " WHERE is_active = 1"
-            query += " ORDER BY sort_order ASC, id ASC"
-            async with db.execute(query, params) as cursor:
-                rows = await cursor.fetchall()
-                return [dict(row) for row in rows]
+            try:
+                order_query = query + " ORDER BY sort_order ASC, id ASC"
+                async with db.execute(order_query, params) as cursor:
+                    rows = await cursor.fetchall()
+                    return [dict(row) for row in rows]
+            except Exception:
+                # در صورت نبود ستون sort_order در دیتابیس قدیمی
+                try:
+                    await db.execute("ALTER TABLE support_agents ADD COLUMN sort_order INTEGER DEFAULT 0;")
+                    await db.commit()
+                except Exception:
+                    pass
+                try:
+                    fallback_query = query + " ORDER BY id ASC"
+                    async with db.execute(fallback_query, params) as cursor:
+                        rows = await cursor.fetchall()
+                        return [dict(row) for row in rows]
+                except Exception:
+                    return []
 
     async def get_support_agent_by_id(self, agent_id: int) -> Optional[Dict[str, Any]]:
         """دریافت اطلاعات یک کارشناس بر اساس شناسه"""
