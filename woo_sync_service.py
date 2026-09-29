@@ -1517,6 +1517,86 @@ def build_woo_attributes_payload(product: dict, specs: Dict[str, str]) -> List[d
     return attributes
 
 
+def build_woo_tags_payload(product: dict, specs: Dict[str, str], focus_kw: str = "") -> List[dict]:
+    """
+    تولید خودکار برچسب‌های تخصصی و سئو محور (Tags) برای محصولات ووکامرس:
+    - برند سازنده (ال جی، سامسونگ، بوش، ...)
+    - دسته‌بندی و نوع کالا (تلویزیون، ماشین ظرفشویی، کولر گازی، ...)
+    - ترکیب نام برند + دسته (تلویزیون ال جی، ماشین لباسشویی سامسونگ، ...)
+    - مدل / پارت‌نامبر دقیق کالا
+    - ظرفیت / سایز کالا (مثلاً ۵۵ اینچ، ۹ کیلوگرم، ۲۴۰۰۰، ...)
+    - کلمه کلیدی کانونی سئو (Focus Keyword)
+    - قابلیت‌های کلیدی و فناوری‌های اختصاصی (4K, OLED, اینورتر، ...)
+    """
+    raw_tags = set()
+    brand = str(product.get("brand") or "").strip()
+    category = str(product.get("category_name") or product.get("category") or "").strip()
+    subcategory = str(product.get("subcategory") or "").strip()
+    model = str(product.get("model_number") or product.get("model") or "").strip()
+    size = str(product.get("size") or "").strip()
+    pname = str(product.get("name") or "").strip()
+
+    # ۱. افزودن برند
+    if brand and len(brand) > 1 and brand.lower() not in ["نامشخص", "-", "--"]:
+        raw_tags.add(brand)
+        raw_tags.add(f"برند {brand}")
+
+    # ۲. افزودن دسته و زیرشاخه
+    if category and category.lower() not in ["default", "نامشخص", "دسته بندی", "-"]:
+        raw_tags.add(category)
+        raw_tags.add(f"خرید {category}")
+        raw_tags.add(f"قیمت {category}")
+    if subcategory and subcategory != category and len(subcategory) > 1:
+        raw_tags.add(subcategory)
+
+    # ۳. ترکیب برند + دسته‌بندی
+    if brand and category and category.lower() not in ["default", "نامشخص"]:
+        raw_tags.add(f"{category} {brand}")
+        raw_tags.add(f"خرید {category} {brand}")
+
+    # ۴. مدل و پارت نامبر
+    if model and len(model) > 1 and model.lower() not in ["نامشخص", "-", "--"]:
+        raw_tags.add(model)
+        if brand:
+            raw_tags.add(f"{brand} {model}")
+
+    # ۵. سایز یا ظرفیت
+    if size and len(size) > 1 and size.lower() not in ["نامشخص", "-", "--"]:
+        if category:
+            raw_tags.add(f"{category} {size}")
+        else:
+            raw_tags.add(size)
+
+    # ۶. کلمه کلیدی کانونی
+    if focus_kw and len(focus_kw) > 3:
+        raw_tags.add(focus_kw.strip())
+
+    # ۷. استخراج فناوری‌ها و ویژگی‌های کلیدی از مشخصات فنی
+    KEY_TECH_WORDS = [
+        "4K", "8K", "OLED", "QLED", "NanoCell", "Mini LED", "Smart", "اسمارت",
+        "اینورتر", "Dual Inverter", "گیربکسی", "دایرکت درایو", "Direct Drive",
+        "ساید بای ساید", "دوقلو", "۴ درب", "سه درب", "بدنه استیل", "بدنه سفید",
+        "بدنه دودی", "بدنه سیلور", "تراست", "گاز R410a", "کمپرسور روتاری", "T3"
+    ]
+    all_specs_text = " ".join([f"{k} {v}" for k, v in specs.items()]) + " " + pname
+    for tech in KEY_TECH_WORDS:
+        if tech.lower() in all_specs_text.lower():
+            raw_tags.add(tech)
+
+    # تبدیل به فرمت استاندارد REST API ووکامرس (حداکثر ۱۲ برچسب برتر)
+    clean_tags = []
+    seen = set()
+    for t in sorted(raw_tags, key=lambda x: len(x)):
+        t_clean = t.strip(" -_▫️•")
+        if t_clean and len(t_clean) >= 2 and t_clean.lower() not in seen:
+            seen.add(t_clean.lower())
+            clean_tags.append({"name": t_clean})
+        if len(clean_tags) >= 12:
+            break
+
+    return clean_tags
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ۵. لایه ۳: اعتبارسنجی خروجی (Output Validation)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1737,6 +1817,7 @@ def publish_single_product_to_woo(product: dict, status: Optional[str] = None) -
         "categories": categories,
         "status": publish_status,
         "attributes": build_woo_attributes_payload(product, specs),
+        "tags": build_woo_tags_payload(product, specs, focus_kw),
         "meta_data": [
             {"key": "_aikala_product_id", "value": pid},
             {"key": "_aikala_brand", "value": product.get("brand", "")},
