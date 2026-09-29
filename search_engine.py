@@ -683,6 +683,15 @@ def toggle_product_hidden_state(pid: str) -> bool:
 
     return new_hidden_state
 
+def get_all_products(include_hidden: bool = True) -> List[Dict[str, Any]]:
+    """دریافت لیست کلیه محصولات کاتالوگ با مدیریت وضعیت پنهان/فعال"""
+    global JSON_PRODUCTS
+    if not JSON_PRODUCTS:
+        load_json_products()
+    if include_hidden:
+        return list(JSON_PRODUCTS)
+    return [p for p in JSON_PRODUCTS if not is_product_hidden(p)]
+
 def get_hidden_products_list() -> List[Dict[str, Any]]:
     """لیست تمام کالاهای پنهان‌شده در سیستم به همراه مشخصات کامل جهت مدیریت ادمین"""
     load_hidden_product_ids()
