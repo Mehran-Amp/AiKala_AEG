@@ -814,9 +814,125 @@ def build_product_categories_list(product: dict) -> List[Dict[str, int]]:
 # ۴. لایه تولید محتوای هوشمند و قالب‌بندی HTML (بدون حدس و توهم)
 # ─────────────────────────────────────────────────────────────────────────────
 
+OFFICIAL_BRAND_DOMAINS: Dict[str, Tuple[str, str]] = {
+    "lg": ("https://www.lg.com", "ال‌جی (LG Electronics)"),
+    "ال جی": ("https://www.lg.com", "ال‌جی (LG Electronics)"),
+    "ال‌جی": ("https://www.lg.com", "ال‌جی (LG Electronics)"),
+    "sony": ("https://www.sony.com", "سونی (Sony Global)"),
+    "سونی": ("https://www.sony.com", "سونی (Sony Global)"),
+    "samsung": ("https://www.samsung.com", "سامسونگ (Samsung)"),
+    "سامسونگ": ("https://www.samsung.com", "سامسونگ (Samsung)"),
+    "bosch": ("https://www.bosch-home.com", "بوش (Bosch Home)"),
+    "بوش": ("https://www.bosch-home.com", "بوش (Bosch Home)"),
+    "philips": ("https://www.philips.com", "فیلیپس (Philips)"),
+    "فیلیپس": ("https://www.philips.com", "فیلیپس (Philips)"),
+    "panasonic": ("https://www.panasonic.com", "پاناسونیک (Panasonic)"),
+    "پاناسونیک": ("https://www.panasonic.com", "پاناسونیک (Panasonic)"),
+    "hisense": ("https://global.hisense.com", "هایسنس (Hisense)"),
+    "هایسنس": ("https://global.hisense.com", "هایسنس (Hisense)"),
+    "delonghi": ("https://www.delonghi.com", "دلونگی (De'Longhi)"),
+    "دلونگی": ("https://www.delonghi.com", "دلونگی (De'Longhi)"),
+    "braun": ("https://www.braunhousehold.com", "براون (Braun)"),
+    "براون": ("https://www.braunhousehold.com", "براون (Braun)"),
+    "beko": ("https://www.beko.com", "بکو (Beko)"),
+    "بکو": ("https://www.beko.com", "بکو (Beko)"),
+    "hitachi": ("https://www.hitachi.com", "هیتاچی (Hitachi)"),
+    "هیتاچی": ("https://www.hitachi.com", "هیتاچی (Hitachi)"),
+    "tefal": ("https://www.tefal.com", "تفال (Tefal)"),
+    "تفال": ("https://www.tefal.com", "تفال (Tefal)"),
+    "moulinex": ("https://www.moulinex.com", "مولینکس (Moulinex)"),
+    "مولینکس": ("https://www.moulinex.com", "مولینکس (Moulinex)"),
+    "kenwood": ("https://www.kenwoodworld.com", "کنوود (Kenwood)"),
+    "کنوود": ("https://www.kenwoodworld.com", "کنوود (Kenwood)"),
+    "jbl": ("https://www.jbl.com", "جی‌بی‌ال (JBL)"),
+    "جی بی ال": ("https://www.jbl.com", "جی‌بی‌ال (JBL)"),
+    "جی‌بی‌ال": ("https://www.jbl.com", "جی‌بی‌ال (JBL)"),
+    "harman kardon": ("https://www.harmankardon.com", "هارمن کاردن (Harman Kardon)"),
+    "هارمن کاردن": ("https://www.harmankardon.com", "هارمن کاردن (Harman Kardon)"),
+    "marshall": ("https://www.marshallheadphones.com", "مارشال (Marshall)"),
+    "مارشال": ("https://www.marshallheadphones.com", "مارشال (Marshall)"),
+    "asus": ("https://www.asus.com", "ایسوس (ASUS)"),
+    "ایسوس": ("https://www.asus.com", "ایسوس (ASUS)"),
+    "lenovo": ("https://www.lenovo.com", "لنوو (Lenovo)"),
+    "لنوو": ("https://www.lenovo.com", "لنوو (Lenovo)"),
+    "hp": ("https://www.hp.com", "اچ‌پی (HP)"),
+    "اچ پی": ("https://www.hp.com", "اچ‌پی (HP)"),
+    "اچ‌پی": ("https://www.hp.com", "اچ‌پی (HP)"),
+    "dell": ("https://www.dell.com", "دل (Dell)"),
+    "دل": ("https://www.dell.com", "دل (Dell)"),
+    "apple": ("https://www.apple.com", "اپل (Apple)"),
+    "اپل": ("https://www.apple.com", "اپل (Apple)"),
+    "acer": ("https://www.acer.com", "ایسر (Acer)"),
+    "ایسر": ("https://www.acer.com", "ایسر (Acer)"),
+    "toshiba": ("https://www.toshiba.com", "توشیبا (Toshiba)"),
+    "توشیبا": ("https://www.toshiba.com", "توشیبا (Toshiba)"),
+    "sharp": ("https://global.sharp", "شارپ (Sharp)"),
+    "شارپ": ("https://global.sharp", "شارپ (Sharp)"),
+    "daewoo": ("https://www.daewoo-electronics.com", "دوو (Daewoo)"),
+    "دوو": ("https://www.daewoo-electronics.com", "دوو (Daewoo)"),
+    "gplus": ("https://gplusiran.com", "جی‌پلاس (GPlus)"),
+    "جی پلاس": ("https://gplusiran.com", "جی‌پلاس (GPlus)"),
+    "جی‌پلاس": ("https://gplusiran.com", "جی‌پلاس (GPlus)"),
+    "snowa": ("https://snowa.ir", "اسنوا (Snowa)"),
+    "اسنوا": ("https://snowa.ir", "اسنوا (Snowa)"),
+    "xvision": ("https://xvision.ir", "ایکس‌ویژن (X.Vision)"),
+    "ایکس ویژن": ("https://xvision.ir", "ایکس‌ویژن (X.Vision)"),
+    "ایکس‌ویژن": ("https://xvision.ir", "ایکس‌ویژن (X.Vision)"),
+    "general gold": ("https://generalgold.ir", "جنرال گلد (General Gold)"),
+    "جنرال گلد": ("https://generalgold.ir", "جنرال گلد (General Gold)"),
+    "ogeneral": ("https://www.fujitsu-general.com", "اجنرال (O'General)"),
+    "اجنرال": ("https://www.fujitsu-general.com", "اجنرال (O'General)"),
+    "gree": ("https://global.gree.com", "گری (Gree)"),
+    "گری": ("https://global.gree.com", "گری (Gree)"),
+    "carrier": ("https://www.carrier.com", "کریر (Carrier)"),
+    "کریر": ("https://www.carrier.com", "کریر (Carrier)"),
+    "midea": ("https://www.midea.com", "میدیا (Midea)"),
+    "میدیا": ("https://www.midea.com", "میدیا (Midea)"),
+}
+
+def get_official_brand_link(brand_name: str) -> Optional[Tuple[str, str]]:
+    """یافتن دامنه رسمی سازنده اصلی محصول بر اساس نام برند"""
+    if not brand_name:
+        return None
+    b_clean = str(brand_name).strip().lower()
+    if b_clean in OFFICIAL_BRAND_DOMAINS:
+        return OFFICIAL_BRAND_DOMAINS[b_clean]
+    for k, v in OFFICIAL_BRAND_DOMAINS.items():
+        if k in b_clean or b_clean in k:
+            return v
+    return None
+
+def sanitize_complete_sentences(text: str) -> str:
+    """
+    تضمین قطعی اینکه هیچ جمله یا پاراگرافی نیمه‌کاره رها نشود.
+    اگر متنی در انتها بدون نقطه یا علامت نگارشی بریده شده باشد، اصلاح یا تا آخرین نقطه تمیز می‌شود.
+    """
+    if not text:
+        return ""
+    paras = [p.strip() for p in text.split("\n\n") if p.strip()]
+    cleaned_paras = []
+    for p in paras:
+        lines = [l.strip() for l in p.split("\n") if l.strip()]
+        cleaned_lines = []
+        for line in lines:
+            if line.startswith(("#", "▫️", "•", "1.", "2.", "3.", "4.", "5.", "6.", "7.", "8.", "9.", "بخش اول", "بخش دوم", "بخش سوم")):
+                cleaned_lines.append(line)
+                continue
+            if not line.endswith((".", "!", "؟", ":", "؛", "»", ")", '"', "'", "»")):
+                last_punct = max(line.rfind("."), line.rfind("!"), line.rfind("؟"))
+                if last_punct > len(line) * 0.6:
+                    line = line[:last_punct + 1].strip()
+                else:
+                    line = line + "."
+            cleaned_lines.append(line)
+        if cleaned_lines:
+            cleaned_paras.append("\n".join(cleaned_lines))
+    return "\n\n".join(cleaned_paras)
+
+
 def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
     """
-    تولید محتوای متنی تخصصی، کاملاً سئو شده (SEO-Rich) بر اساس مشخصات واقعی با هوش مصنوعی (Gemini / DeepSeek)
+    تولید متن نقد و بررسی تخصصی ۳۵۰ الی ۵۰۰ کلمه‌ای با Gemini / DeepSeek
     شامل هدینگ‌های H3 و تکرار طبیعی نام و مدل کالا برای رتبه‌گیری در گوگل
     همراه با بازیابی آنی از کش دائمی محتوا جهت صفر کردن مصرف توکن
     """
@@ -824,36 +940,38 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
     model_key = extract_product_model_key(product)
     pname = str(product.get("name") or product.get("title", "")).strip()
     brand = str(product.get("brand", "")).strip()
-    specs_str = ", ".join([f"{k}: {v}" for k, v in specs.items() if v and str(v).lower() != "نامشخص"][:12])
+    specs_str = ", ".join([f"{k}: {v}" for k, v in specs.items() if v and str(v).lower() != "نامشخص"][:15])
 
     # ۱. بررسی کش دائمی محتوای هوش مصنوعی
     try:
         from ai_content_cache import get_cached_ai_content
         cached = get_cached_ai_content(pid, model_key)
         if cached and cached.get("ai_overview") and len(cached["ai_overview"]) >= 40:
-            return cached["ai_overview"]
+            return sanitize_complete_sentences(cached["ai_overview"])
     except Exception:
         pass
 
     if product.get("ai_generated_description") and len(product["ai_generated_description"]) >= 40:
-        return product["ai_generated_description"]
+        return sanitize_complete_sentences(product["ai_generated_description"])
 
     prompt = f"""شما نویسنده و متخصص ارشد سئو (SEO Content Specialist) و کارشناس نقد و بررسی لوازم خانگی و دیجیتال هستید.
-برای محصول زیر بر اساس مشخصات فنی تایید شده، یک نقد و بررسی جامع، مستند و سئو شده به زبان فارسی بنویسید:
+برای محصول زیر بر اساس مشخصات فنی تایید شده، یک نقد و بررسی جامع، مستند، سئو شده و بسیار جذاب به زبان فارسی بنویسید:
 
 نام دقیق محصول: {pname}
 برند: {brand}
 مشخصات فنی تایید شده:
 {specs_str if specs_str else 'مشخصات استاندارد شرکتی'}
 
-الزامات و قوانین سئو:
+الزامات و قوانین حیاتی نگارش و سئو:
 ۱. نام کامل محصول ({pname}) و برند ({brand}) باید به صورت کاملاً طبیعی ۲ تا ۴ بار در طول متن تکرار شود.
-۲. ساختار متن باید در ۳ بخش مجزا همراه با تیترهای جذاب باشد:
-   - بخش اول: معرفی کلی، اصالت و زبان طراحی {pname}
-   - بخش دوم: بررسی تخصصی موتور، عملکرد فنی و قابلیت‌های کلیدی دستگاه
-   - بخش سوم: ارزش خرید، مصرف انرژی و جمع‌بندی نهایی برای خریداران
-۳. از آوردن اطلاعات غلط، توان یا گارانتی‌های ساختگی جداً خودداری کنید.
-۴. لحن حرفه‌ای، روان، معتبر و بدون زیاده‌گویی تبلیغاتی زرد باشد."""
+۲. ساختار متن باید در ۳ بخش مجزا همراه با تیترهای جذاب (H3) باشد:
+   - بخش اول: معرفی کلی، اصالت، مهندسی ساخت و زبان طراحی {pname}
+   - بخش دوم: بررسی تخصصی موتور، عملکرد فنی، پردازشگر و قابلیت‌های کلیدی دستگاه
+   - بخش سوم: جمع‌بندی نهایی، راندمان مصرف انرژی و راهنمای خرید برای مشتریان
+۳. الزامات پایان جملات: تمامی جملات و پاراگراف‌ها باید به صورت ۱۰۰٪ کامل و با نقطه پایانی (.) تمام شوند و به هیچ وجه جمله‌ای نیمه‌کاره رها نشود.
+۴. کلمات کلیدی، اصطلاحات فنی، تکنولوژی‌های ساخت و نام قطعات را با علامت بولد (**کلمه یا عبارت**) مشخص کنید تا خوانایی در سایت بالا برود.
+۵. از آوردن اطلاعات غلط، توان یا گارانتی‌های ساختگی جداً خودداری کنید.
+۶. لحن حرفه‌ای، روان، معتبر و بدون زیاده‌گویی تبلیغاتی زرد باشد. به هیچ وجه لینک یا ارجاع به وب‌سایت‌های متفرقه نگذارید."""
 
     from gemini_enricher import get_ai_settings, get_gemini_api_key, get_deepseek_api_key
     woo_settings = get_woo_settings()
@@ -872,7 +990,7 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
                         {"role": "system", "content": "تو متخصص تولید محتوای سئو فروشگاهی هستی."},
                         {"role": "user", "content": prompt}
                     ],
-                    "max_tokens": 1000,
+                    "max_tokens": 2048,
                     "temperature": 0.25,
                     "stream": False
                 }
@@ -882,13 +1000,13 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
                     headers={"Content-Type": "application/json", "Authorization": f"Bearer {ds_key}"},
                     method="POST"
                 )
-                with urllib.request.urlopen(req, timeout=14) as resp:
+                with urllib.request.urlopen(req, timeout=16) as resp:
                     res_data = json.loads(resp.read().decode("utf-8"))
                     choice = res_data.get("choices", [{}])[0]
                     content = (choice.get("message", {}).get("content") or "").strip()
                     if content and len(content) >= 40:
                         logger.info(f"✨ [WOO AI DESC] نقد و بررسی تخصصی '{pname}' با DeepSeek تولید شد.")
-                        return content
+                        return sanitize_complete_sentences(content)
             except Exception as e:
                 logger.warning(f"⚠️ [WOO AI DESC DeepSeek] for '{pname}': {e}")
 
@@ -909,7 +1027,7 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature": 0.25,
-            "maxOutputTokens": 1000
+            "maxOutputTokens": 2048
         }
     }
     
@@ -923,7 +1041,7 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
                 headers={"Content-Type": "application/json"},
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=12) as resp:
+            with urllib.request.urlopen(req, timeout=15) as resp:
                 res_data = json.loads(resp.read().decode("utf-8"))
                 cand = res_data.get("candidates", [])
                 if cand:
@@ -931,7 +1049,7 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
                     raw_text = "".join([p.get("text", "") for p in text_parts]).strip()
                     if raw_text and len(raw_text) >= 40:
                         logger.info(f"✨ [WOO AI DESC] نقد و بررسی تخصصی '{pname}' با Gemini ({model_name}) تولید شد.")
-                        return raw_text
+                        return sanitize_complete_sentences(raw_text)
         except urllib.error.HTTPError as he:
             err_body = he.read().decode("utf-8", errors="ignore")
             logger.debug(f"⚠️ [WOO AI DESC HTTP {he.code}] Model {model_name} for '{pname}': {err_body[:100]}")
@@ -1250,9 +1368,9 @@ def generate_woo_seo_faq(product: dict, specs: Dict[str, str]) -> Tuple[str, str
         })
 
     faq_section_html = f"""
-    <section style="margin-top: 30px; margin-bottom: 25px;">
-        <h2 style="color: #0f172a; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; margin-bottom: 16px; font-weight: 700;">
-            💬 پرسش‌های متداول درباره {pname}
+    <section style="margin-top: 35px; margin-bottom: 25px;">
+        <h2 style="color: #0f172a; font-size: 20px; border-bottom: 2px solid #cbd5e1; padding-bottom: 10px; margin-bottom: 18px; font-weight: 800; line-height: 1.5;">
+            💬 پرسش‌های متداول خریداران درباره {pname}
         </h2>
         {faq_items_html}
     </section>
@@ -1271,9 +1389,9 @@ def generate_woo_seo_faq(product: dict, specs: Dict[str, str]) -> Tuple[str, str
 def build_product_html_description(product: dict, specs: Dict[str, str], overview_text: str = "") -> str:
     """
     تولید محتوای جامع سئو محور (SEO-Optimized HTML5) شامل:
-    ۱. هدینگ‌های معنایی H2 و H3 بهینه‌شده برای الگوریتم‌های گوگل
-    ۲. متن نقد و بررسی تخصصی بدون کلمات زرد
-    ۳. جدول استاندارد مشخصات فنی و دیتاشیت با تگ‌های معنایی Table
+    ۱. هدینگ‌های معنایی H2 و H3 استاندارد و بزرگ برای الگوریتم‌های گوگل
+    ۲. متن نقد و بررسی تخصصی با کلمات کلیدی بولد و جملات کاملاً بدون نقص
+    ۳. بک‌لینک مستقیم به وب‌سایت رسمی سازنده برند
     ۴. بخش پرسش‌های متداول (FAQ) به همراه اسکیما Rich Snippets گوگل (FAQPage JSON-LD)
     """
     pname = product.get("name") or product.get("title", "")
@@ -1285,31 +1403,58 @@ def build_product_html_description(product: dict, specs: Dict[str, str], overvie
     if not clean_overview or len(clean_overview) < 40:
         clean_overview = generate_woo_ai_description(product, specs)
 
-    # حذف کلمات ممنوعه تبلیغاتی از متن معرفی
+    # تضمین سلامت جملات و حذف کلمات تبلیغاتی
+    clean_overview = sanitize_complete_sentences(clean_overview)
     for bad_w in FORBIDDEN_AD_WORDS:
         clean_overview = re.sub(rf'\b{re.escape(bad_w)}\b', '', clean_overview)
     clean_overview = clean_overview.strip()
 
-    # تبدیل پاراگراف‌های متنی به تگ‌های HTML پاراگراف استاندارد
+    # پارس و فرمت‌بندی هوشمند پاراگراف‌ها، تیترهای H3 و کلمات بولد
     paragraphs = [p.strip() for p in clean_overview.split("\n\n") if p.strip()]
     if not paragraphs and clean_overview:
         paragraphs = [p.strip() for p in clean_overview.split("\n") if p.strip()]
 
     paragraphs_html = ""
     for para in paragraphs:
-        clean_p = re.sub(r'[*#_`]', '', para).strip()
-        if clean_p:
-            paragraphs_html += f'<p style="margin-bottom: 14px; text-align: justify; line-height: 1.9; color: #334155; font-size: 14.5px;">{clean_p}</p>\n'
+        # تشخیص تیترهای فرعی H3
+        if para.startswith("###") or para.startswith("##") or any(para.startswith(k) for k in ["بخش اول:", "بخش دوم:", "بخش سوم:", "۱.", "۲.", "۳.", "طراحی", "بررسی موتور", "عملکرد فنی", "کیفیت ساخت", "ارزش خرید"]):
+            clean_title = re.sub(r'^[#\d\.\-\:\s]+', '', para).strip()
+            clean_title = re.sub(r'[*_`]', '', clean_title).strip()
+            if clean_title:
+                paragraphs_html += f'<h3 style="color: #1e40af; font-size: 18px; font-weight: 700; margin-top: 24px; margin-bottom: 12px; line-height: 1.5;">{clean_title}</h3>\n'
+            continue
 
-    # بخش بررسی تخصصی با هدینگ H2 بهینه‌شده برای سئو
+        # تبدیل **کلمه** به تگ بولد <strong>
+        formatted_para = re.sub(r'\*\*(.*?)\*\*', r'<strong style="color: #0f172a; font-weight: 700;">\1</strong>', para)
+        formatted_para = re.sub(r'[*_`]', '', formatted_para)
+        clean_p = formatted_para.strip()
+        if clean_p:
+            paragraphs_html += f'<p style="margin-bottom: 16px; text-align: justify; line-height: 2.0; color: #334155; font-size: 15px;">{clean_p}</p>\n'
+
+    # جعبه مرجع رسمی برند و بک‌لینک معتبر سازنده اصلی
+    brand_ref_box = ""
+    official_link = get_official_brand_link(brand)
+    if official_link:
+        brand_url, brand_title = official_link
+        brand_ref_box = f"""
+        <div style="margin-top: 24px; padding: 14px 18px; background-color: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 13.5px; color: #475569; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <span>🌐 <strong style="color: #0f172a;">مرجع رسمی سازنده:</strong> جهت استعلام کاتالوگ بین‌المللی و استانداردها به وب‌سایت سازنده مراجعه فرمایید.</span>
+            <a href="{brand_url}" target="_blank" rel="nofollow noopener noreferrer" style="color: #2563eb; font-weight: 700; text-decoration: underline;">
+                مشاهده پایگاه رسمی {brand_title} ↗
+            </a>
+        </div>
+        """
+
+    # بخش بررسی تخصصی با هدینگ H2 استاندارد و بزرگ برای سئو
     intro_section = ""
     if paragraphs_html:
         intro_section = f"""
-        <article style="background-color: #f8fafc; border-right: 4px solid #2563eb; padding: 20px 24px; border-radius: 8px; margin-bottom: 25px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
-            <h2 style="color: #1e3a8a; font-size: 17px; margin-top: 0; margin-bottom: 15px; font-weight: 700; line-height: 1.5;">
-                📖 نقد، بررسی و راهنمای خرید {pname}
+        <article style="background-color: #f8fafc; border-right: 4px solid #2563eb; padding: 22px 26px; border-radius: 8px; margin-bottom: 25px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+            <h2 style="color: #0f172a; font-size: 22px; margin-top: 0; margin-bottom: 18px; font-weight: 800; line-height: 1.6; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px;">
+                📖 نقد، بررسی و راهنمای خرید تخصصی {pname}
             </h2>
             {paragraphs_html}
+            {brand_ref_box}
         </article>
         """
 
