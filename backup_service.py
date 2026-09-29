@@ -975,7 +975,7 @@ async def auto_backup_background_task(bot, admin_ids: List[int]):
 # =====================================================================
 
 def reset_sqlite_database_cleanly(db_path: str = "bot_data.db"):
-    """پاکسازی و بازسازی دیتابیس SQLite به صفر مطلق با حفظ ساختار اسکیما"""
+    """پاکسازی و بازسازی دیتابیس SQLite به صفر مطلق با حفظ کامل و ۱۰۰٪ ساختار اسکیما"""
     if os.path.exists(db_path):
         try:
             conn = sqlite3.connect(db_path, timeout=5)
@@ -998,91 +998,203 @@ def reset_sqlite_database_cleanly(db_path: str = "bot_data.db"):
             except Exception:
                 pass
 
-    # ساخت مجدد جداول محصولات و دسته‌بندی‌ها
-    try:
-        from db_bridge import init_product_tables
-        init_product_tables()
-    except Exception as e:
-        logger.warning(f"Error initializing product tables: {e}")
-
-    # ساخت جداول اصلی سیستم (سفارشات، کانال‌ها، پشتیبانی و لاگ‌ها)
+    # ساخت مجدد کلیه جداول استاندارد سیستم (مطابق اسکیما اصلی database.py)
     try:
         conn = sqlite3.connect(db_path, timeout=5)
         conn.executescript("""
-            CREATE TABLE IF NOT EXISTS orders (
+            CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_id TEXT UNIQUE,
-                user_id INTEGER,
-                product_id TEXT,
-                product_name TEXT,
-                product_price INTEGER,
-                deposit_amount INTEGER,
-                remaining_amount INTEGER,
-                full_name TEXT,
-                phone TEXT,
-                address TEXT,
-                tracking_code TEXT,
-                receipt_file_id TEXT,
-                status TEXT DEFAULT 'pending_deposit',
-                notes TEXT,
-                created_at TEXT,
-                updated_at TEXT
+                product_id TEXT UNIQUE,
+                data_id TEXT,
+                category_key TEXT,
+                category_name TEXT,
+                subcategory TEXT,
+                name TEXT,
+                model_number TEXT,
+                brand TEXT,
+                size TEXT,
+                price INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'b',
+                assembly TEXT,
+                score TEXT,
+                year TEXT,
+                resolution TEXT,
+                panel TEXT,
+                refresh_rate TEXT,
+                backlight TEXT,
+                os TEXT,
+                capacity_btu TEXT,
+                ac_type TEXT,
+                temp_range TEXT,
+                room_size TEXT,
+                energy_consumption TEXT,
+                performance TEXT,
+                key_features TEXT,
+                plan TEXT,
+                capacity_foot TEXT,
+                num_doors TEXT,
+                capacity_kg TEXT,
+                baskets TEXT,
+                more_details TEXT,
+                ai_generated_description TEXT DEFAULT '',
+                category TEXT DEFAULT 'default',
+                colors_json TEXT DEFAULT '{}',
+                specs_json TEXT DEFAULT '{}',
+                url TEXT,
+                image_url TEXT,
+                source TEXT DEFAULT 'MomtazKalla',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS channels (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                channel_id TEXT UNIQUE,
-                title TEXT,
-                username TEXT,
-                added_at TEXT
+                channel_id TEXT UNIQUE NOT NULL,
+                channel_name TEXT,
+                keywords TEXT DEFAULT '',
+                active INTEGER DEFAULT 1,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS channel_posts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                channel_id TEXT,
+                channel_id TEXT NOT NULL,
+                channel_name TEXT,
                 message_id INTEGER,
                 text TEXT,
-                date TEXT,
-                UNIQUE(channel_id, message_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS monitored_channels (
-                channel_id TEXT PRIMARY KEY,
-                channel_title TEXT,
-                channel_username TEXT,
-                is_active INTEGER DEFAULT 1,
-                last_checked_msg_id INTEGER DEFAULT 0,
+                cleaned_text TEXT,
+                date TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
-            CREATE TABLE IF NOT EXISTS support_agents (
+            CREATE TABLE IF NOT EXISTS user_requests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER UNIQUE,
-                name TEXT,
-                is_active INTEGER DEFAULT 1,
-                assigned_orders_count INTEGER DEFAULT 0
+                request_id INTEGER,
+                user_id INTEGER NOT NULL,
+                username TEXT,
+                product_id TEXT,
+                product_name TEXT NOT NULL,
+                city TEXT,
+                color TEXT,
+                status TEXT DEFAULT 'Pending',
+                admin_response TEXT,
+                final_price TEXT,
+                shipping_method TEXT DEFAULT 'freight',
+                invoice_link TEXT,
+                request_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_code TEXT UNIQUE NOT NULL,
+                user_id INTEGER NOT NULL,
+                username TEXT,
+                product_id TEXT,
+                product_name TEXT,
+                full_name TEXT,
+                phone1 TEXT,
+                phone2 TEXT,
+                province_city TEXT,
+                address TEXT,
+                postal_code TEXT,
+                total_price TEXT DEFAULT '0',
+                deposit_amount TEXT,
+                shipping_method TEXT DEFAULT 'freight',
+                receipt_file_id TEXT,
+                receipt_text TEXT,
+                status TEXT DEFAULT 'Awaiting_Payment',
+                admin_note TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS price_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                product_id TEXT,
-                old_price INTEGER,
-                new_price INTEGER,
-                changed_at TEXT
+                product_id TEXT NOT NULL,
+                price TEXT,
+                color TEXT,
+                date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS sync_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sync_type TEXT,
-                items_count INTEGER,
-                status TEXT,
-                timestamp TEXT
+                action TEXT NOT NULL,
+                status TEXT NOT NULL,
+                message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS user_last_view (
+                user_id INTEGER PRIMARY KEY,
+                last_view_date TIMESTAMP DEFAULT '1970-01-01'
+            );
+
+            CREATE TABLE IF NOT EXISTS monitored_channels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT UNIQUE NOT NULL,
+                channel_name TEXT,
+                keywords TEXT DEFAULT '',
+                active INTEGER DEFAULT 1,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS support_agents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                title TEXT,
+                telegram_username TEXT,
+                phone TEXT,
+                working_hours TEXT DEFAULT '۹ الی ۲۳',
+                is_active INTEGER DEFAULT 1,
+                sort_order INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS channel_reposts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_channel TEXT NOT NULL,
+                source_msg_id INTEGER NOT NULL,
+                target_channel TEXT NOT NULL,
+                target_msg_id INTEGER,
+                has_photo INTEGER DEFAULT 1,
+                reposted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(source_channel, source_msg_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS downloader_users (
+                user_id INTEGER PRIMARY KEY,
+                download_count INTEGER DEFAULT 0,
+                unlocked INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_download_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS downloader_referrals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                inviter_id INTEGER NOT NULL,
+                invited_id INTEGER UNIQUE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS dynamic_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category_key TEXT UNIQUE,
+                title TEXT,
+                tree_json TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
         conn.commit()
         conn.close()
     except Exception as e:
-        logger.warning(f"Error creating core schema: {e}")
+        logger.warning(f"Error creating full core schema in reset: {e}")
+
+    # ساخت مجدد ساختار دیتابیس کالکشن محصولات
+    try:
+        from db_bridge import init_product_tables
+        init_product_tables()
+    except Exception as e:
+        logger.warning(f"Error initializing product tables: {e}")
 
 
 def perform_hard_reset_to_zero(bot=None, notify_user_id: Optional[int] = None) -> Tuple[bool, str, Optional[str]]:
