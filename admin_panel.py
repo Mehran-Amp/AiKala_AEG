@@ -4423,117 +4423,258 @@ async def admin_woo_hub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def admin_woo_batch_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """پیش‌نمایش امنیتی قبل از ارسال انبوه به ووکامرس"""
+    """پیش‌نمایش امنیتی و مدیریت پارت‌بندی ۵۰ عددی قبل از ارسال به ووکامرس"""
     query = update.callback_query
     await query.answer()
-
-    from woo_sync_service import get_woo_sync_stats
-    stats = get_woo_sync_stats()
-
-    msg = (
-        "🚀 <b>پیش‌نمایش و آماده‌سازی ارسال انبوه به ووکامرس</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "📊 <b>گزارش آماری و فیلترهای امنیتی:</b>\n"
-        f"▫️ کل محصولات کاتالوگ: <b>{stats['total_catalog']:,}</b>\n"
-        f"▫️ 🔒 <b>محافظت‌شده (آاگ / AEG):</b> <code>{stats['aeg_protected_count']:,}</code> (عدم ارسال/عدم تغییر)\n"
-        f"▫️ قبلاً ارسال شده: <b>{stats['published_count']:,}</b>\n"
-        f"▫️ آماده برای ارسال/بروزرسانی: <b>{stats['ready_to_send_count']:,} کالا</b>\n\n"
-        "🌳 <b>قانون ساختار:</b> تمام محصولات زیر شاخه ریشه <code>AiKala</code> و دسته‌های مربوطه قرار خواهند گرفت.\n"
-        "🛡 <b>اعتبارسنجی:</b> کالاهای ناقص یا فاقد مشخصات به صف بازبینی منتقل می‌شوند.\n"
-        "⏱ <b>زمان تخمینی:</b> حدود ۲۰ الی ۳۰ دقیقه (با تاخیر هوشمند ضد-بلاک)\n\n"
-        "❓ <i>محصولات در چه وضعیتی در سایت ایجاد شوند؟</i>"
-    )
-
-    kb = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("📥 ارسال در حالت پیش‌نویس (Draft) - پیشنهادی", callback_data="adm_woo_batch_run|draft")
-        ],
-        [
-            InlineKeyboardButton("🌐 ارسال و انتشار عمومی (Publish)", callback_data="adm_woo_batch_run|publish")
-        ],
-        [
-            InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="adm_woo_hub")
-        ]
-    ])
-    await query.edit_message_text(msg, reply_markup=kb, parse_mode="HTML")
-
-
-async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, publish_status: str):
-    """اجرای عملیات ارسال انبوه محصولات به ووکامرس"""
-    query = update.callback_query
-    await query.answer("عملیات ارسال انبوه آغاز شد...", show_alert=False)
 
     from search_engine import JSON_PRODUCTS, load_json_products
     if not JSON_PRODUCTS:
         load_json_products()
 
-    from woo_sync_service import is_aeg_protected, publish_single_product_to_woo, save_woo_settings, get_woo_settings
+    from woo_sync_service import get_woo_sync_stats, get_woo_batch_state
+    stats = get_woo_sync_stats()
+    batch_state = get_woo_batch_state()
 
     total = len(JSON_PRODUCTS)
+    curr_idx = batch_state.get("current_index", 0)
+    has_active_batch = curr_idx > 0 and curr_idx < total
+
+    chunk_size = batch_state.get("chunk_size", 50)
+    delay_sec = int(batch_state.get("delay_seconds", 10))
+
+    if has_active_batch:
+        remaining = total - curr_idx
+        next_chunk_end = min(curr_idx + chunk_size, total)
+        msg = (
+            "🚀 <b>مدیریت ارسال دسته‌ای محصولات به ووکامرس</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "⏸ <b>یک عملیات پارت‌بندی در جریان و متوقف شده است:</b>\n"
+            f"▫️ کل محصولات کاتالوگ: <b>{total:,} کالا</b>\n"
+            f"▫️ آخرین موقعیت: <b>کالای {curr_idx:,} از {total:,}</b>\n"
+            f"▫️ کالاهای باقیمانده: <b>{remaining:,} کالا</b>\n"
+            f"▫️ 🟢 موفق قبلی: <b>{batch_state.get('sent_count', 0):,}</b> | ⚠️ بازبینی: <b>{batch_state.get('review_count', 0):,}</b>\n\n"
+            f"🛡 <b>تنظیمات ضد ۴۲۹ (Anti Rate-Limit):</b>\n"
+            f"▫️ سایز هر پارت: <b>{chunk_size} محصول</b>\n"
+            f"▫️ تاخیر امن: <b>{delay_sec} ثانیه بین هر کالا</b> (محافظت کامل از سقف API)\n"
+            f"▫️ پارت بعدی: <b>از کالای {curr_idx + 1:,} تا {next_chunk_end:,}</b>\n\n"
+            "👇 <i>لطفاً اقدام مورد نظر را انتخاب نمایید:</i>"
+        )
+        kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(f"▶️ ادامه پارت بعدی ({chunk_size} محصول | {curr_idx+1} تا {next_chunk_end})", callback_data="adm_woo_batch_run|resume")
+            ],
+            [
+                InlineKeyboardButton("🔄 شروع مجدد از ابتدا (کالای ۱)", callback_data="adm_woo_batch_run|restart")
+            ],
+            [
+                InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="adm_woo_hub")
+            ]
+        ])
+    else:
+        msg = (
+            "🚀 <b>پیش‌نمایش و آماده‌سازی ارسال هوشمند به ووکامرس</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "📊 <b>گزارش آماری و فیلترهای امنیتی:</b>\n"
+            f"▫️ کل محصولات کاتالوگ: <b>{stats['total_catalog']:,} کالا</b>\n"
+            f"▫️ 🔒 <b>محافظت‌شده (آاگ / AEG):</b> <code>{stats['aeg_protected_count']:,}</code> (عدم تغییر/مستثنی)\n"
+            f"▫️ قبلاً در سایت ثبت شده: <b>{stats['published_count']:,} کالا</b>\n"
+            f"▫️ آماده ارسال / بروزرسانی: <b>{stats['ready_to_send_count']:,} کالا</b>\n\n"
+            "🛡 <b>سازوکار ضد-بلاک و مدیریت هوشمند ترافیک API:</b>\n"
+            f"▫️ هر پارت شامل <b>۵۰ محصول</b> است.\n"
+            f"▫️ بین هر محصول <b>۱۰ ثانیه تاخیر هوشمند</b> اعمال می‌شود تا با خطای ۴۲۹ (Rate Limit) مواجه نشویم.\n"
+            "▫️ پس از اتمام هر ۵۰ محصول، گزارش پیشرفت نمایش داده شده و تایید ادمین برای پارت بعد دریافت می‌گردد.\n"
+            "▫️ مشخصات فنی + متون سئو هم‌زمان در ربات و سایت ثبت خواهند شد.\n\n"
+            "❓ <i>محصولات در چه وضعیتی به ووکامرس ارسال شوند؟</i>"
+        )
+        kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📥 شروع ۵۰ محصول اول در حالت پیش‌نویس (Draft)", callback_data="adm_woo_batch_run|draft")
+            ],
+            [
+                InlineKeyboardButton("🌐 شروع ۵۰ محصول اول در حالت انتشار (Publish)", callback_data="adm_woo_batch_run|publish")
+            ],
+            [
+                InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="adm_woo_hub")
+            ]
+        ])
+
+    await query.edit_message_text(msg, reply_markup=kb, parse_mode="HTML")
+
+
+async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, action: str):
+    """اجرای عملیات ارسال دسته‌ای ۵۰ عددی با تاخیر ۱۰ ثانیه‌ای و سیستم تایید مرحله‌ای ادمین"""
+    query = update.callback_query
+    await query.answer("در حال بارگذاری و شروع پارت...", show_alert=False)
+
+    from search_engine import JSON_PRODUCTS, load_json_products
+    if not JSON_PRODUCTS:
+        load_json_products()
+
+    from woo_sync_service import (
+        is_aeg_protected, publish_single_product_to_woo,
+        save_woo_settings, get_woo_settings,
+        get_woo_batch_state, save_woo_batch_state, reset_woo_batch_state
+    )
+
+    batch_state = get_woo_batch_state()
+    total = len(JSON_PRODUCTS)
+    chunk_size = 50
+    delay_sec = 10.0
+
+    if action == "restart":
+        reset_woo_batch_state()
+        batch_state = get_woo_batch_state()
+        publish_status = "draft"
+    elif action == "resume":
+        publish_status = batch_state.get("publish_status", "draft")
+    else:
+        publish_status = action if action in ["draft", "publish"] else "draft"
+        if not batch_state.get("is_active"):
+            batch_state["current_index"] = 0
+            batch_state["sent_count"] = 0
+            batch_state["skipped_aeg"] = 0
+            batch_state["review_count"] = 0
+            batch_state["errors_count"] = 0
+
+    start_idx = batch_state.get("current_index", 0)
+    if start_idx >= total:
+        start_idx = 0
+        batch_state["current_index"] = 0
+
+    end_idx = min(start_idx + chunk_size, total)
+    current_chunk_count = end_idx - start_idx
+    chunk_num = (start_idx // chunk_size) + 1
+    total_chunks = (total + chunk_size - 1) // chunk_size
+
+    batch_state["is_active"] = True
+    batch_state["publish_status"] = publish_status
+    save_woo_batch_state(batch_state)
+
     status_msg = await query.edit_message_text(
-        f"⏳ <b>در حال ارسال انبوه محصولات به ووکامرس (وضعیت: {publish_status.upper()})...</b>\n"
-        f"▫️ پیشرفت: ۰ از {total} (۰٪)\n"
+        f"⏳ <b>آغاز پارت {chunk_num} از {total_chunks} ({current_chunk_count} محصول)...</b>\n"
+        f"▫️ محدوده کاتالوگ: از {start_idx + 1:,} تا {end_idx:,}\n"
+        f"▫️ تاخیر امنیتی: ۱۰ ثانیه برای هر کالا\n"
         f"▫️ لطفاً صبور باشید...",
         parse_mode="HTML"
     )
 
-    sent_count = 0
-    skipped_aeg = 0
-    review_count = 0
-    errors_count = 0
+    chunk_sent = 0
+    chunk_skipped_aeg = 0
+    chunk_review = 0
+    chunk_errors = 0
 
-    for idx, product in enumerate(JSON_PRODUCTS, 1):
+    for i in range(start_idx, end_idx):
+        product = JSON_PRODUCTS[i]
+        curr_num_in_chunk = (i - start_idx) + 1
+        global_curr_num = i + 1
+        pname = str(product.get("name") or product.get("title") or "کالای بدون عنوان").strip()[:35]
+        pid = str(product.get("product_id") or product.get("id") or "")
+
+        # نمایش کارت پیشرفت زنده
+        try:
+            overall_pct = int((global_curr_num / total) * 100)
+            await status_msg.edit_text(
+                f"⏳ <b>در حال پردازش پارت {chunk_num} از {total_chunks}</b> (وضعیت: {publish_status.upper()})\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"📦 <b>کالای جاری ({curr_num_in_chunk}/{current_chunk_count}):</b> <code>{pname}</code>\n"
+                f"▫️ پیشرفت کل کاتالوگ: <b>{global_curr_num:,}</b> از <b>{total:,}</b> ({overall_pct}٪)\n"
+                f"▫️ ✅ موفق در این پارت: <b>{chunk_sent}</b>\n"
+                f"▫️ 🔒 محافظت‌شده (AEG): <b>{chunk_skipped_aeg}</b>\n"
+                f"▫️ ⚠️ صف بازبینی: <b>{chunk_review}</b>\n"
+                f"▫️ ❌ خطاهای API: <b>{chunk_errors}</b>\n\n"
+                f"⏱ <i>تاخیر هوشمند محافظتی ۱۰ ثانیه‌ای فعال است...</i>",
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass
+
         if is_aeg_protected(product):
-            skipped_aeg += 1
+            chunk_skipped_aeg += 1
+            batch_state["skipped_aeg"] = batch_state.get("skipped_aeg", 0) + 1
+            batch_state["current_index"] = i + 1
+            save_woo_batch_state(batch_state)
+            await asyncio.sleep(1.0)
             continue
 
         try:
             ok, res_txt, data = await asyncio.to_thread(publish_single_product_to_woo, product, publish_status)
             if ok:
-                sent_count += 1
-            elif "بازبینی" in res_txt:
-                review_count += 1
+                chunk_sent += 1
+                batch_state["sent_count"] = batch_state.get("sent_count", 0) + 1
+            elif "بازبینی" in str(res_txt):
+                chunk_review += 1
+                batch_state["review_count"] = batch_state.get("review_count", 0) + 1
             else:
-                errors_count += 1
+                chunk_errors += 1
+                batch_state["errors_count"] = batch_state.get("errors_count", 0) + 1
         except Exception as e:
-            errors_count += 1
+            logger.warning(f"Batch publish error on {pid}: {e}")
+            chunk_errors += 1
+            batch_state["errors_count"] = batch_state.get("errors_count", 0) + 1
 
-        # آپدیت وضعیت هر ۱۵ کالا
-        if idx % 15 == 0 or idx == total:
-            percent = int((idx / total) * 100)
-            try:
-                await status_msg.edit_text(
-                    f"⏳ <b>در حال ارسال انبوه به ووکامرس...</b>\n"
-                    f"▫️ پیشرفت: <b>{idx:,}</b> از <b>{total:,}</b> ({percent}٪)\n"
-                    f"▫️ ✅ ارسال موفق: <b>{sent_count}</b>\n"
-                    f"▫️ 🔒 محافظت‌شده AEG: <b>{skipped_aeg}</b>\n"
-                    f"▫️ ⚠️ هدایت به بازبینی: <b>{review_count}</b>\n"
-                    f"▫️ ❌ ناموفق: <b>{errors_count}</b>",
-                    parse_mode="HTML"
-                )
-            except Exception:
-                pass
-        await asyncio.sleep(1.2)
+        batch_state["current_index"] = i + 1
+        batch_state["last_pid"] = pid
+        batch_state["last_pname"] = pname
+        save_woo_batch_state(batch_state)
+
+        # اعمال ۱۰ ثانیه تاخیر هوشمند بین هر محصول جهت رعایت سقف مجاز API (Rate Limit 429 Protection)
+        if i < end_idx - 1:
+            await asyncio.sleep(delay_sec)
 
     settings = get_woo_settings()
     settings["last_sync_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     save_woo_settings(settings)
 
-    final_txt = (
-        "✅ <b>عملیات ارسال انبوه به ووکامرس با موفقیت پایان یافت.</b>\n"
+    remaining_after = total - end_idx
+
+    # پایان کل محصولات کاتالوگ
+    if remaining_after <= 0:
+        reset_woo_batch_state()
+        final_txt = (
+            "🎉 <b>عملیات ارسال کلیه پارت‌ها با موفقیت ۱۰۰٪ پایان یافت!</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"▫️ کل محصولات پردازش‌شده: <b>{total:,} کالا</b>\n"
+            f"▫️ 🟢 با موفقیت ثبت/بروزرسانی شد: <b>{batch_state.get('sent_count', 0):,} کالا</b>\n"
+            f"▫️ 🔒 مستثنی و محافظت‌شده (آاگ): <b>{batch_state.get('skipped_aeg', 0):,} کالا</b>\n"
+            f"▫️ ⚠️ در صف بازبینی دستی: <b>{batch_state.get('review_count', 0):,} کالا</b>\n"
+            f"▫️ ❌ خطاهای API/شبکه: <b>{batch_state.get('errors_count', 0):,} کالا</b>\n\n"
+            "🌳 تمامی محصولات با مشخصات فنی کامل و نقد و بررسی سئو در شاخه <b>AiKala</b> قرار گرفتند."
+        )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 بازگشت به بخش ووکامرس", callback_data="adm_woo_hub")],
+            [InlineKeyboardButton("🏠 پنل اصلی مدیریت", callback_data="adm_back_panel")]
+        ])
+        await status_msg.edit_text(final_txt, reply_markup=kb, parse_mode="HTML")
+        return
+
+    # توقف و نمایش گزارش مرحله‌ای + دکمه‌های ادامه/توقف برای ادمین
+    checkpoint_txt = (
+        f"🏁 <b>پارت {chunk_num} از {total_chunks} با موفقیت به پایان رسید!</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        f"▫️ کل محصولات بررسی‌شده: <b>{total:,}</b>\n"
-        f"▫️ 🟢 با موفقیت ثبت/بروزرسانی شد: <b>{sent_count:,} کالا</b>\n"
-        f"▫️ 🔒 مستثنی و محافظت‌شده (آاگ): <b>{skipped_aeg:,} کالا</b>\n"
-        f"▫️ ⚠️ در صف بازبینی دستی: <b>{review_count:,} کالا</b>\n"
-        f"▫️ ❌ خطاهای شبکه/API: <b>{errors_count:,}</b>\n\n"
-        "🌳 کلیه محصولات ارسالی با موفقیت در شاخه مادر <b>AiKala</b> قرار گرفتند."
+        f"📊 <b>گزارش عملکرد این ۵۰ محصول:</b>\n"
+        f"▫️ ✅ ارسال موفق و یکدست: <b>{chunk_sent} کالا</b>\n"
+        f"▫️ 🔒 محافظت‌شده AEG: <b>{chunk_skipped_aeg} کالا</b>\n"
+        f"▫️ ⚠️ هدایت به صف بازبینی: <b>{chunk_review} کالا</b>\n"
+        f"▫️ ❌ خطاها: <b>{chunk_errors} کالا</b>\n\n"
+        f"📈 <b>وضعیت کل کاتالوگ تا این لحظه:</b>\n"
+        f"▫️ انجام شده: <b>{end_idx:,} از {total:,} کالا</b> ({int((end_idx/total)*100)}٪)\n"
+        f"▫️ <b>کالاهای باقیمانده برای پارت‌های بعدی:</b> <b>{remaining_after:,} کالا</b>\n\n"
+        "❓ <i>آیا مایلید ۵۰ محصول بعدی (پارت بعدی) فوراً آغاز شود؟</i>"
     )
+
+    next_chunk_limit = min(remaining_after, chunk_size)
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 بازگشت به بخش ووکامرس", callback_data="adm_woo_hub")],
-        [InlineKeyboardButton("🏠 پنل اصلی مدیریت", callback_data="adm_back_panel")]
+        [
+            InlineKeyboardButton(f"▶️ بله، ارسال ۵۰ محصول بعدی ({remaining_after:,} مانده)", callback_data="adm_woo_batch_run|resume")
+        ],
+        [
+            InlineKeyboardButton("⏸ توقف موقت و ادامه در آینده", callback_data="adm_woo_hub")
+        ],
+        [
+            InlineKeyboardButton("🏠 پنل مدیریت ربات", callback_data="adm_back_panel")
+        ]
     ])
-    await status_msg.edit_text(final_txt, reply_markup=kb, parse_mode="HTML")
+    await status_msg.edit_text(checkpoint_txt, reply_markup=kb, parse_mode="HTML")
 
 
 async def admin_woo_test_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):

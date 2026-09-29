@@ -31,6 +31,57 @@ CONTENT_SOURCES_FILE = "content_sources.json"
 WOO_REVIEW_QUEUE_FILE = "woo_review_queue.json"
 WOO_PRODUCT_MAP_FILE = "woo_product_map.json"
 WOO_MODEL_MAP_FILE = "woo_model_map.json"
+WOO_BATCH_STATE_FILE = "woo_batch_state.json"
+
+
+def get_woo_batch_state() -> dict:
+    """بارگذاری وضعیت جاری ارسال دسته‌ای ۵۰ تایی"""
+    default_state = {
+        "is_active": False,
+        "current_index": 0,
+        "chunk_size": 50,
+        "delay_seconds": 10.0,
+        "publish_status": "draft",
+        "processed_total": 0,
+        "sent_count": 0,
+        "skipped_aeg": 0,
+        "review_count": 0,
+        "errors_count": 0,
+        "last_pid": "",
+        "last_pname": "",
+        "updated_at": ""
+    }
+    if os.path.exists(WOO_BATCH_STATE_FILE):
+        try:
+            with open(WOO_BATCH_STATE_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+                if isinstance(saved, dict):
+                    default_state.update(saved)
+        except Exception as e:
+            logger.warning(f"Error loading {WOO_BATCH_STATE_FILE}: {e}")
+    return default_state
+
+
+def save_woo_batch_state(state: dict) -> bool:
+    """ذخیره وضعیت جاری ارسال دسته‌ای"""
+    try:
+        state["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(WOO_BATCH_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        logger.error(f"Error saving {WOO_BATCH_STATE_FILE}: {e}")
+        return False
+
+
+def reset_woo_batch_state() -> bool:
+    """ریست کردن وضعیت ارسال دسته‌ای"""
+    try:
+        if os.path.exists(WOO_BATCH_STATE_FILE):
+            os.remove(WOO_BATCH_STATE_FILE)
+        return True
+    except Exception:
+        return False
 
 # کلمات ممنوعه تبلیغاتی زرد در لایه اعتبارسنجی
 FORBIDDEN_AD_WORDS = [
