@@ -738,7 +738,8 @@ def build_product_categories_list(product: dict) -> List[Dict[str, int]]:
 
 def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
     """
-    تولید محتوای متنی تخصصی و روان در ۳ پاراگراف مستقل بر اساس مشخصات واقعی با هوش مصنوعی (Gemini / DeepSeek)
+    تولید محتوای متنی تخصصی، کاملاً سئو شده (SEO-Rich) بر اساس مشخصات واقعی با هوش مصنوعی (Gemini / DeepSeek)
+    شامل هدینگ‌های H3 و تکرار طبیعی نام و مدل کالا برای رتبه‌گیری در گوگل
     همراه با بازیابی آنی از کش دائمی محتوا جهت صفر کردن مصرف توکن
     """
     pid = str(product.get("product_id") or product.get("id") or "").strip()
@@ -759,18 +760,22 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
     if product.get("ai_generated_description") and len(product["ai_generated_description"]) >= 40:
         return product["ai_generated_description"]
 
-    prompt = f"""شما نویسنده ارشد فنی و کارشناس نقد و بررسی لوازم خانگی و دیجیتال هستید.
-بر اساس مشخصات فنی واقعی زیر، یک متن معرفی و نقد و بررسی جذاب، دقیق و کاملاً حرفه‌ای به زبان فارسی بنویسید:
+    prompt = f"""شما نویسنده و متخصص ارشد سئو (SEO Content Specialist) و کارشناس نقد و بررسی لوازم خانگی و دیجیتال هستید.
+برای محصول زیر بر اساس مشخصات فنی تایید شده، یک نقد و بررسی جامع، مستند و سئو شده به زبان فارسی بنویسید:
 
-نام محصول: {pname}
+نام دقیق محصول: {pname}
 برند: {brand}
 مشخصات فنی تایید شده:
 {specs_str if specs_str else 'مشخصات استاندارد شرکتی'}
 
-دستورالعمل‌ها:
-۱. متن در قالب ۳ پاراگراف روان (معرفی کلی، بررسی عملکرد و ویژگی‌های کلیدی، نتیجه‌گیری و ارزش خرید) باشد.
-۲. از ذکر اعداد یا امکانات غیرواقعی و گارانتی‌های ساختگی جداً خودداری کنید.
-۳. متن کاملاً طبیعی، ترغیب‌کننده و معتبر باشد."""
+الزامات و قوانین سئو:
+۱. نام کامل محصول ({pname}) و برند ({brand}) باید به صورت کاملاً طبیعی ۲ تا ۴ بار در طول متن تکرار شود.
+۲. ساختار متن باید در ۳ بخش مجزا همراه با تیترهای جذاب باشد:
+   - بخش اول: معرفی کلی، اصالت و زبان طراحی {pname}
+   - بخش دوم: بررسی تخصصی موتور، عملکرد فنی و قابلیت‌های کلیدی دستگاه
+   - بخش سوم: ارزش خرید، مصرف انرژی و جمع‌بندی نهایی برای خریداران
+۳. از آوردن اطلاعات غلط، توان یا گارانتی‌های ساختگی جداً خودداری کنید.
+۴. لحن حرفه‌ای، روان، معتبر و بدون زیاده‌گویی تبلیغاتی زرد باشد."""
 
     from gemini_enricher import get_ai_settings, get_gemini_api_key, get_deepseek_api_key
     woo_settings = get_woo_settings()
@@ -786,11 +791,11 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
                 payload = {
                     "model": "deepseek-chat",
                     "messages": [
-                        {"role": "system", "content": "تو نویسنده ارشد فنی فروشگاهی هستی."},
+                        {"role": "system", "content": "تو متخصص تولید محتوای سئو فروشگاهی هستی."},
                         {"role": "user", "content": prompt}
                     ],
-                    "max_tokens": 900,
-                    "temperature": 0.2,
+                    "max_tokens": 1000,
+                    "temperature": 0.25,
                     "stream": False
                 }
                 req = urllib.request.Request(
@@ -832,8 +837,8 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
-            "temperature": 0.2,
-            "maxOutputTokens": 900
+            "temperature": 0.25,
+            "maxOutputTokens": 1000
         }
     }
     
@@ -848,13 +853,13 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
             )
             with urllib.request.urlopen(req, timeout=12) as resp:
                 res_data = json.loads(resp.read().decode("utf-8"))
-                candidates = res_data.get("candidates", [])
-                if candidates:
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    if parts:
-                        desc_text = parts[0].get("text", "").strip()
-                        if desc_text:
-                            return desc_text
+                cand = res_data.get("candidates", [])
+                if cand:
+                    text_parts = cand[0].get("content", {}).get("parts", [])
+                    raw_text = "".join([p.get("text", "") for p in text_parts]).strip()
+                    if raw_text and len(raw_text) >= 40:
+                        logger.info(f"✨ [WOO AI DESC] نقد و بررسی تخصصی '{pname}' با Gemini ({model_name}) تولید شد.")
+                        return raw_text
         except urllib.error.HTTPError as he:
             err_body = he.read().decode("utf-8", errors="ignore")
             logger.debug(f"⚠️ [WOO AI DESC HTTP {he.code}] Model {model_name} for '{pname}': {err_body[:100]}")
@@ -862,7 +867,7 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
         except Exception as e:
             logger.debug(f"⚠️ [WOO AI DESC] Model {model_name} failed for '{pname}': {e}")
             continue
-        
+
     return ""
 
 
