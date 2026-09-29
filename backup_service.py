@@ -1197,13 +1197,14 @@ def reset_sqlite_database_cleanly(db_path: str = "bot_data.db"):
         logger.warning(f"Error initializing product tables: {e}")
 
 
-def perform_hard_reset_to_zero(bot=None, notify_user_id: Optional[int] = None) -> Tuple[bool, str, Optional[str]]:
+def perform_hard_reset_to_zero(bot=None, notify_user_id: Optional[int] = None, reset_woo: bool = True) -> Tuple[bool, str, Optional[str]]:
     """
     ریست کلی دیتابیس به صفر مطلق (Hard Reset):
     ۱. ساخت بک‌آپ اضطراری ایمن از وضعیت کنونی سیستم (Safety Snapshot)
     ۲. پاکسازی کامل تمام جداول دیتابیس SQLite و بازسازی جداول خالی
-    ۳. پاکسازی فایل‌های کاتالوگ محصولات، عکس‌ها، کش هوش مصنوعی و ووکامرس
-    ۴. بارگذاری مجدد سرویس‌ها در حافظه موقت (In-Memory)
+    ۳. پاکسازی فایل‌های کاتالوگ محصولات، عکس‌ها و کش هوش مصنوعی
+    ۴. پاکسازی اختیاری نگاشت‌ها و وضعیت ارسال ووکامرس (بر اساس reset_woo)
+    ۵. بارگذاری مجدد سرویس‌ها در حافظه موقت (In-Memory)
     """
     try:
         # ۱. ساخت بکاپ اضطراری ایمنی پیش از ریست
@@ -1216,7 +1217,7 @@ def perform_hard_reset_to_zero(bot=None, notify_user_id: Optional[int] = None) -
             active_db = "bot_data.db"
         reset_sqlite_database_cleanly(active_db)
 
-        # ۳. بازنشانی کلیه فایل‌های داده و کش به صفر مطلق
+        # ۳. بازنشانی فایل‌های داده، عکس‌ها و کش‌های کاتالوگ ربات
         json_empty_maps = {
             "catalog_products.json": {},
             "momtazkalla_all_products.json": {},
@@ -1227,14 +1228,22 @@ def perform_hard_reset_to_zero(bot=None, notify_user_id: Optional[int] = None) -
             "categories_tree.json": {},
             "verified_photos.json": {},
             "channel_photos_map.json": {},
-            "woo_product_map.json": {},
-            "woo_model_map.json": {},
-            "woo_review_queue.json": [],
             "content_sources.json": [],
             "ai_content_cache.json": {"products": {}, "models": {}},
             "price_sync_info.json": {},
             "monitor_state.json": {},
         }
+
+        # اگر ادمین تایید کرده باشد که ووکامرس هم صفر شود
+        if reset_woo:
+            json_empty_maps["woo_product_map.json"] = {}
+            json_empty_maps["woo_model_map.json"] = {}
+            json_empty_maps["woo_review_queue.json"] = []
+            try:
+                from woo_sync_service import reset_woo_batch_state
+                reset_woo_batch_state()
+            except Exception as e_bs:
+                logger.warning(f"Error resetting woo_batch_state: {e_bs}")
 
         for fn, empty_val in json_empty_maps.items():
             try:
@@ -1253,17 +1262,21 @@ def perform_hard_reset_to_zero(bot=None, notify_user_id: Optional[int] = None) -
 
         _reload_in_memory_services()
 
+        woo_status_note = (
+            "✅ وضعیت پارت‌بندی و نگاشت‌های ووکامرس کاملاً صفر و ریست شدند."
+            if reset_woo else
+            "🛡 <b>پیوندهای ووکامرس و وضعیت پارت‌بندی سایت حفظ شدند</b> (جهت جلوگیری از ارسال تکراری کالاها به سایت)."
+        )
+
         res_msg = (
-            f"🧨 <b>دیتابیس سیستم با موفقیت به «صفر مطلق» بازنشانی شد!</b>\n"
+            f"🧨 <b>دیتابیس سیستم با موفقیت بازنشانی شد!</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"🔒 <b>فایل پیکربندی (.env) و توکن‌ها کاملاً دست‌نخورده و ایمن حفظ شدند.</b>\n"
-            f"✅ تمام سفارش‌ها، فاکتورها و خریدهای ثبت‌شده پاکسازی شدند.\n"
-            f"✅ کاتالوگ جامع محصولات و دسته‌بندی‌ها به صفر ریست شدند.\n"
-            f"✅ سیستم‌های صوتی، لپ‌تاپ‌ها و محصولات AEG پاک شدند.\n"
+            f"✅ تمام سفارش‌ها، فاکتورها و استعلام‌های دیتابیس صفر شدند.\n"
+            f"✅ کاتالوگ جامع محصولات، صوتی، لپ‌تاپ و AEG پاکسازی شدند.\n"
             f"✅ تمامی آلبوم‌ها و تصاویر متصل‌شده به کالاها حذف شدند.\n"
             f"✅ مخزن کش محتواهای هوش مصنوعی و مشخصات فنی صفر گردید.\n"
-            f"✅ نگاشت‌های همگام‌سازی ووکامرس و مدل‌های سایت پاکسازی شدند.\n"
-            f"✅ تاریخچه قیمت‌ها، لاگ‌ها و وضعیت پایش به صفر بازنشانی شدند.\n"
+            f"▫️ {woo_status_note}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"🛡 <b>توجه امنیتی:</b> یک فایل بک‌آپ اضطراری کامل (شامل تمام اطلاعات قبلی) قبل از شروع ریست ایجاد گردید.\n"
             f"📁 نام فایل اسنپ‌شات: <code>{manifest['backup_name']}</code>"

@@ -3566,16 +3566,51 @@ async def handle_admin_hard_reset_password_input(update: Update, context: Contex
         await admin_backup_menu(update, context)
         return True
 
-    # رمز عبور صحیح است -> اجرای ریست کلی
+    # رمز عبور صحیح است -> نمایش انتخاب هوشمند نحوه ریست ووکامرس
     context.user_data.pop("awaiting_hard_reset_password", None)
 
-    status_msg = await update.message.reply_text(
-        "⏳ <b>در حال ایجاد اسنپ‌شات اضطراری و ریست کلی دیتابیس به صفر مطلق...</b>",
+    confirm_text = (
+        "🔐 <b>رمز عبور امنیتی با موفقیت تایید گردید.</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "لطفاً نحوه بازنشانی پیوندهای ووکامرس را تعیین فرمایید:\n\n"
+        "🛡 <b>گزینه ۱: ریست صفر هوشمند (پیشنهادی)</b>\n"
+        "▫️ تمام کاتالوگ، عکس‌ها، سفارش‌ها، لاگ‌ها و کش‌های ربات صفر می‌شوند.\n"
+        "▫️ <b>پیوند محصولات سایت و وضعیت پارت‌بندی ووکامرس حفظ می‌ماند</b> تا در صورت بارگذاری مجدد کاتالوگ، هیچ کالایی دوبل یا تکراری در سایت ثبت نگردد.\n\n"
+        "🧨 <b>گزینه ۲: ریست صفر کامل و مطلق</b>\n"
+        "▫️ تمام اطلاعات ربات + <b>کلیه نگاشت‌ها و موقعیت پارت‌های ووکامرس نیز کاملاً پاکسازی و صفر می‌شوند.</b>"
+    )
+
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🛡 ۱. ریست هوشمند (حفظ پیوندهای ووکامرس)", callback_data="adm_hreset_exec|keep_woo")],
+        [InlineKeyboardButton("🧨 ۲. ریست صفر مطلق (پاکسازی کامل ربات و ووکامرس)", callback_data="adm_hreset_exec|full")],
+        [InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="adm_hard_reset_cancel")]
+    ])
+
+    await update.message.reply_text(confirm_text, reply_markup=kb, parse_mode="HTML")
+    return True
+
+
+async def admin_hard_reset_execute(update: Update, context: ContextTypes.DEFAULT_TYPE, reset_woo: bool = False):
+    """اجرای نهایی عملیات ریست بر اساس انتخاب ادمین برای ووکامرس"""
+    user = update.effective_user
+    if not is_owner(user.id):
+        if update.callback_query:
+            await update.callback_query.answer("⛔️ دسترسی غیرمجاز.", show_alert=True)
+        return
+
+    if update.callback_query:
+        await update.callback_query.answer("در حال اجرای ریست...", show_alert=False)
+        msg_obj = update.callback_query.message
+    else:
+        msg_obj = update.message
+
+    status_msg = await msg_obj.reply_text(
+        "⏳ <b>در حال ایجاد اسنپ‌شات اضطراری و اجرای بازنشانی دیتابیس...</b>",
         parse_mode="HTML"
     )
 
     from backup_service import perform_hard_reset_to_zero
-    ok, res_text, snapshot_path = perform_hard_reset_to_zero(context.bot, user.id)
+    ok, res_text, snapshot_path = perform_hard_reset_to_zero(context.bot, user.id, reset_woo=reset_woo)
 
     # ارسال فایل بکاپ اضطراری به عنوان مدرک ایمنی
     if snapshot_path and os.path.exists(snapshot_path):
@@ -3585,7 +3620,7 @@ async def handle_admin_hard_reset_password_input(update: Update, context: Contex
                     chat_id=user.id,
                     document=f_snap,
                     filename=os.path.basename(snapshot_path),
-                    caption="🛡 <b>نسخه پشتیبان اضطراری (قبل از ریست کلی به صفر مطلق)</b>",
+                    caption="🛡 <b>نسخه پشتیبان اضطراری (قبل از ریست کلی)</b>",
                     parse_mode="HTML"
                 )
         except Exception as e:
@@ -3599,8 +3634,7 @@ async def handle_admin_hard_reset_password_input(update: Update, context: Contex
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔙 بازگشت به منوی پشتیبان", callback_data="adm_backup_menu")]
     ])
-    await update.message.reply_text(res_text, reply_markup=kb, parse_mode="HTML")
-    return True
+    await msg_obj.reply_text(res_text, reply_markup=kb, parse_mode="HTML")
 
 
 # =====================================================================

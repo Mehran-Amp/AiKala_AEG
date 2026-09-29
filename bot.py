@@ -2557,6 +2557,15 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         from admin_panel import admin_hard_reset_cancel_handler
         await admin_hard_reset_cancel_handler(update, context)
 
+    elif data.startswith("adm_hreset_exec|"):
+        if not is_owner(update.effective_user.id):
+            await query.answer("⛔️ این بخش تنها در اختیارات ادمین اصلی می‌باشد.", show_alert=True)
+            return
+        mode = data.split("|")[1]
+        reset_woo = (mode == "full")
+        from admin_panel import admin_hard_reset_execute
+        await admin_hard_reset_execute(update, context, reset_woo=reset_woo)
+
     # ─── مدیریت ادمین‌ها و سطوح دسترسی (مخصوص ادمین اصلی) ───
     elif data == "adm_manage_admins":
         if not is_owner(update.effective_user.id):
