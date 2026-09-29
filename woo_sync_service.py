@@ -1313,38 +1313,12 @@ def build_product_html_description(product: dict, specs: Dict[str, str], overvie
         </article>
         """
 
-    # ساخت جدول مشخصات فنی استاندارد معنایی
-    specs_rows_html = ""
-    for k, v in specs.items():
-        clean_k = str(k).strip()
-        clean_v = str(v).strip()
-        if clean_k and clean_v and clean_v.lower() != "نامشخص":
-            specs_rows_html += f"""
-            <tr style="border-bottom: 1px solid #e2e8f0;">
-                <th scope="row" style="padding: 11px 16px; background-color: #f8fafc; color: #475569; font-weight: 600; width: 35%; text-align: right; border-left: 1px solid #e2e8f0;">{clean_k}</th>
-                <td style="padding: 11px 16px; color: #0f172a; font-weight: 500;">{clean_v}</td>
-            </tr>
-            """
-
-    # تولید بخش پرسش‌های متداول
+    # تولید بخش پرسش‌های متداول و اسکیما
     faq_html, _ = generate_woo_seo_faq(product, specs)
 
     full_html = f"""
     <div style="direction: rtl; font-family: Tahoma, Segoe UI, sans-serif; line-height: 1.8; color: #1e293b;">
         {intro_section}
-        
-        <section style="margin-top: 25px; margin-bottom: 25px;">
-            <h2 style="color: #0f172a; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; margin-top: 20px; margin-bottom: 15px; font-weight: 700;">
-                📊 جدول مشخصات فنی و دیتاشیت کارخانه {pname}
-            </h2>
-            
-            <table style="width: 100%; border-collapse: collapse; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; font-size: 13.5px; margin-bottom: 20px;">
-                <tbody>
-                    {specs_rows_html}
-                </tbody>
-            </table>
-        </section>
-
         {faq_html}
     </div>
     """
