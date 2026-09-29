@@ -1351,6 +1351,53 @@ def build_product_html_description(product: dict, specs: Dict[str, str], overvie
     return full_html.strip()
 
 
+def build_woo_attributes_payload(product: dict, specs: Dict[str, str]) -> List[dict]:
+    """
+    تبدیل مشخصات کامل فنی به اتریبیوت‌های بومی ووکامرس (Attributes)
+    جهت نمایش خودکار در تب ویژگی‌های قالب و فیلترهای ووکامرس
+    """
+    attributes = []
+    # ۱. افزودن برند سازنده
+    brand = str(product.get("brand") or "").strip()
+    if brand:
+        attributes.append({
+            "name": "برند",
+            "visible": True,
+            "variation": False,
+            "options": [brand]
+        })
+
+    # ۲. افزودن مدل / پارت نامبر
+    model_no = str(product.get("model_number") or product.get("model") or "").strip()
+    if model_no:
+        attributes.append({
+            "name": "مدل دستگاه",
+            "visible": True,
+            "variation": False,
+            "options": [model_no]
+        })
+
+    # ۳. افزودن کلیه مشخصات فنی استخراج‌شده
+    NON_ATTR_KEYS = {"قیمت", "رنگ", "تخفیف", "گارانتی", "ضمانت", "عکس", "دسته", "زیرشاخه", "امتیاز", "امتیاز کیفی"}
+    for k, v in specs.items():
+        clean_k = str(k).strip().lstrip("-*▫️• ").replace("_", " ")
+        clean_v = str(v).strip()
+        if not clean_k or not clean_v or clean_v.lower() == "نامشخص":
+            continue
+        if any(b in clean_k for b in NON_ATTR_KEYS):
+            continue
+        if clean_k in ["برند", "مدل دستگاه"]:
+            continue
+        attributes.append({
+            "name": clean_k,
+            "visible": True,
+            "variation": False,
+            "options": [clean_v]
+        })
+
+    return attributes
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ۵. لایه ۳: اعتبارسنجی خروجی (Output Validation)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1401,28 +1448,44 @@ def publish_single_product_to_woo(product: dict, status: Optional[str] = None) -
 
     model_key = extract_product_model_key(product)
 
-    # ۱. استخراج یا بازیابی مشخصات فنی
-    specs = {}
-    if isinstance(product.get("specs"), dict) and product.get("specs"):
-        specs = product["specs"].copy()
-    elif isinstance(product.get("ai_specs"), dict) and product.get("ai_specs"):
-        specs = product["ai_specs"].copy()
-    elif isinstance(product.get("more_details"), str) and product.get("more_details"):
-        # تبدیل رشته به دیکشنری
-        parts = [p.strip() for p in product["more_details"].split("|") if ":" in p]
-        for p in parts:
-            k, v = p.split(":", 1)
-            specs[k.strip()] = v.strip()
+    # ۱. استخراج یا بازیابی جامع مشخصات فنی (ترکیب کاتالوگ پایه، دیتابیس و هوش مصنوعی)
+    from search_engine import get_product_specs
+    specs = get_product_specs(product)
+    if not specs:
+        specs = {}
+        if isinstance(product.get("specs"), dict) and product.get("specs"):
+            specs = product["specs"].copy()
+        elif isinstance(product.get("ai_specs"), dict) and product.get("ai_specs"):
+            specs = product["ai_specs"].copy()
+        elif isinstance(product.get("more_details"), str) and product.get("more_details"):
+            parts = [p.strip() for p in product["more_details"].split("|") if ":" in p]
+            for p in parts:
+                k, v = p.split(":", 1)
+                specs[k.strip()] = v.strip()
+
+    # استخراج مشخصات از توضیحات هوش مصنوعی موجود در صورت وجود خطوط کلید:مقدار
+    existing_desc = str(product.get("ai_generated_description") or product.get("more_details") or "")
+    if existing_desc:
+        for line in existing_desc.splitlines():
+            line_s = line.strip().lstrip("-*▫️• ")
+            if ":" in line_s:
+                pk, pv = line_s.split(":", 1)
+                pk_clean = pk.strip()
+                pv_clean = pv.strip()
+                if pk_clean and pv_clean and len(pk_clean) < 40 and len(pv_clean) < 200:
+                    if pk_clean not in specs:
+                        specs[pk_clean] = pv_clean
 
     # بررسی کش دائمی برای مشخصات فنی
     from ai_content_cache import get_cached_ai_content, save_product_ai_content
     cached = get_cached_ai_content(pid, model_key)
-    if cached and isinstance(cached.get("ai_specs"), dict) and len(cached["ai_specs"]) >= 8:
+    if cached and isinstance(cached.get("ai_specs"), dict) and len(cached["ai_specs"]) >= 4:
         specs.update(cached["ai_specs"])
         product["specs"] = specs
         product["ai_specs"] = specs
-    elif len(specs) < 6:
-        # اگر مشخصات در دیتابیس ربات ناقص یا بدون مشخصات بود، تولید آنی با هوش مصنوعی (همانند دکمه تکمیل کالاهای بدون مشخصات)
+    
+    # اگر هنوز تعداد مشخصات فنی استخراج‌شده کمتر از ۱۰ مورد است، تکمیل خودکار و استخراج ۲۰+ مشخصه با هوش مصنوعی
+    if len(specs) < 10:
         try:
             from gemini_enricher import (
                 get_ai_settings, get_gemini_api_key, get_deepseek_api_key,
@@ -1554,6 +1617,7 @@ def publish_single_product_to_woo(product: dict, status: Optional[str] = None) -
         "stock_status": stock_status,
         "categories": categories,
         "status": publish_status,
+        "attributes": build_woo_attributes_payload(product, specs),
         "meta_data": [
             {"key": "_aikala_product_id", "value": pid},
             {"key": "_aikala_brand", "value": product.get("brand", "")},
