@@ -1058,23 +1058,37 @@ async def send_product_card_and_photos(chat_id: int, product: dict, context: Con
                 if m_obj:
                     if hasattr(m_obj, "seek"):
                         m_obj.seek(0)
-                    await context.bot.send_photo(
-                        chat_id=chat_id,
-                        photo=m_obj,
-                        caption=msg,
-                        reply_markup=product_inline_keyboard(pid, context, show_photo_button=False, is_admin=is_admin),
-                        parse_mode="HTML"
-                    )
-                    return
+                    if len(msg) <= 1024:
+                        await context.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=m_obj,
+                            caption=msg,
+                            reply_markup=product_inline_keyboard(pid, context, show_photo_button=False, is_admin=is_admin),
+                            parse_mode="HTML"
+                        )
+                        return
+                    else:
+                        # تلگرام برای کپشن عکس سقف ۱۰۲۴ کاراکتر دارد؛ ارسال تصویر با عنوان مختصر و سپس ارسال متن کامل
+                        p_short_title = f"📸 <b>{p_name}</b>"
+                        try:
+                            await context.bot.send_photo(
+                                chat_id=chat_id,
+                                photo=m_obj,
+                                caption=p_short_title,
+                                parse_mode="HTML"
+                            )
+                        except Exception as e_ph:
+                            logger.warning(f"Failed short photo send: {e_ph}")
             except Exception as e:
                 logger.warning(f"Failed to send web image for {p_name}: {e}")
 
     # ارسال پنجره مشخصات و قیمت همراه با کیبورد بهینه‌شده و غیرفعال‌سازی پیش‌نمایش لینک (disable link preview)
+    safe_msg = msg if len(msg) <= 4090 else (msg[:4080] + "...")
     try:
         from telegram import LinkPreviewOptions
         await context.bot.send_message(
             chat_id=chat_id,
-            text=msg,
+            text=safe_msg,
             reply_markup=kb,
             parse_mode="HTML",
             link_preview_options=LinkPreviewOptions(is_disabled=True)
@@ -1082,7 +1096,7 @@ async def send_product_card_and_photos(chat_id: int, product: dict, context: Con
     except Exception:
         await context.bot.send_message(
             chat_id=chat_id,
-            text=msg,
+            text=safe_msg,
             reply_markup=kb,
             parse_mode="HTML",
             disable_web_page_preview=True

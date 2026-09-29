@@ -3220,17 +3220,27 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 from telegram import LinkPreviewOptions
                 lp_opts = LinkPreviewOptions(is_disabled=True)
                 if query.message.caption is not None:
-                    await query.edit_message_caption(caption=updated_msg, reply_markup=adm_kb, parse_mode="HTML")
-                else:
-                    await query.edit_message_text(text=updated_msg, reply_markup=adm_kb, parse_mode="HTML", link_preview_options=lp_opts)
-            except Exception:
-                try:
-                    if query.message.caption is not None:
+                    if len(updated_msg) <= 1024:
                         await query.edit_message_caption(caption=updated_msg, reply_markup=adm_kb, parse_mode="HTML")
                     else:
-                        await query.edit_message_text(text=updated_msg, reply_markup=adm_kb, parse_mode="HTML", disable_web_page_preview=True)
+                        p_name = get_product_name(prod)
+                        short_cap = f"🌟 <b>{p_name}</b>\n✅ <i>مشخصات جامع هوش مصنوعی استخراج شد.</i>"
+                        try:
+                            await query.edit_message_caption(caption=short_cap, parse_mode="HTML")
+                        except Exception:
+                            pass
+                        safe_text = updated_msg if len(updated_msg) <= 4090 else (updated_msg[:4080] + "...")
+                        await query.message.reply_text(safe_text, reply_markup=adm_kb, parse_mode="HTML", link_preview_options=lp_opts)
+                else:
+                    safe_text = updated_msg if len(updated_msg) <= 4090 else (updated_msg[:4080] + "...")
+                    await query.edit_message_text(text=safe_text, reply_markup=adm_kb, parse_mode="HTML", link_preview_options=lp_opts)
+            except Exception as e_edit:
+                logger.warning(f"Error updating message after AI enrich: {e_edit}")
+                safe_text = updated_msg if len(updated_msg) <= 4090 else (updated_msg[:4080] + "...")
+                try:
+                    await query.message.reply_text(safe_text, reply_markup=adm_kb, parse_mode="HTML", disable_web_page_preview=True)
                 except Exception:
-                    await query.message.reply_text(updated_msg, reply_markup=adm_kb, parse_mode="HTML", disable_web_page_preview=True)
+                    pass
             await query.message.reply_text("✅ <b>مشخصات فنی کالا با موفقیت توسط هوش مصنوعی استخراج و در سیستم ذخیره گردید.</b>", parse_mode="HTML")
         else:
             await query.message.reply_text(
