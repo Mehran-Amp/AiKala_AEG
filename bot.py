@@ -2597,6 +2597,21 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         pub_status = data.split("|")[1]
         await admin_woo_batch_run_handler(update, context, pub_status)
 
+    elif data == "adm_woo_batch_cancel":
+        if not is_admin(update.effective_user.id):
+            await query.answer("⛔️ این بخش تنها در اختیارات ادمین می‌باشد.", show_alert=True)
+            return
+        if context and context.application:
+            context.application.bot_data["woo_batch_cancelled"] = True
+        try:
+            from woo_sync_service import get_woo_batch_state, save_woo_batch_state
+            bs = get_woo_batch_state()
+            bs["is_cancelled"] = True
+            save_woo_batch_state(bs)
+        except Exception:
+            pass
+        await query.answer("🛑 دستور توقف ثبت شد. عملیات متوقف می‌شود...", show_alert=True)
+
     elif data == "adm_woo_test_prompt":
         if not is_admin(update.effective_user.id):
             await query.answer("⛔️ این بخش تنها در اختیارات ادمین می‌باشد.", show_alert=True)

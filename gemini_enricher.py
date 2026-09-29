@@ -669,8 +669,18 @@ def call_gemini_api_with_error(api_key: str, product: dict) -> Tuple[Optional[Di
                 if he.code == 429:
                     last_error = f"سقف سهمیه مدل {model_name} موقتاً تکمیل است (Rate Limit 429). استراحت ۳۰ ثانیه‌ای و سوئیچ به مدل پشتیبان..."
                     logger.warning(f"⏳ [GEMINI 429] استراحت ۳۰ ثانیه‌ای و سوئیچ به مدل پشتیبان (مانند flash-lite)...")
+                    try:
+                        from woo_sync_service import set_woo_live_status, clear_woo_live_status
+                        set_woo_live_status(f"⚠️ خطای ۴۲۹ ترافیک API در {model_name}؛ استراحت ۳۰ ثانیه‌ای و چرخش مدل...", is_in_cooloff=True, cooloff_remaining=30)
+                    except Exception:
+                        pass
                     model_exhausted = True
                     time.sleep(30.0)
+                    try:
+                        from woo_sync_service import clear_woo_live_status
+                        clear_woo_live_status()
+                    except Exception:
+                        pass
                     break
             except Exception as e:
                 last_error = str(e)

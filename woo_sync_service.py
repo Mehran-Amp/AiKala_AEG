@@ -83,6 +83,33 @@ def reset_woo_batch_state() -> bool:
     except Exception:
         return False
 
+
+# وضعیت زنده پردازش و خطاهای لحظه‌ای (مانند 429)
+WOO_LIVE_STATUS = {
+    "msg": "",
+    "is_in_cooloff": False,
+    "cooloff_remaining": 0,
+    "last_error": ""
+}
+
+def get_woo_live_status() -> dict:
+    """دریافت آخرین وضعیت زنده هوش مصنوعی و خطاها"""
+    return WOO_LIVE_STATUS
+
+def set_woo_live_status(msg: str, is_in_cooloff: bool = False, cooloff_remaining: int = 0, last_error: str = ""):
+    """ثبت پیام زنده یا خطای لحظه‌ای جهت نمایش در کارت تلگرام"""
+    WOO_LIVE_STATUS["msg"] = msg
+    WOO_LIVE_STATUS["is_in_cooloff"] = is_in_cooloff
+    WOO_LIVE_STATUS["cooloff_remaining"] = cooloff_remaining
+    WOO_LIVE_STATUS["last_error"] = last_error
+
+def clear_woo_live_status():
+    """پاکسازی وضعیت خطای لحظه‌ای پس از رفع"""
+    WOO_LIVE_STATUS["msg"] = ""
+    WOO_LIVE_STATUS["is_in_cooloff"] = False
+    WOO_LIVE_STATUS["cooloff_remaining"] = 0
+    WOO_LIVE_STATUS["last_error"] = ""
+
 # کلمات ممنوعه تبلیغاتی زرد در لایه اعتبارسنجی
 FORBIDDEN_AD_WORDS = [
     "معجزه", "شگفت‌انگیزترین", "فقط امروز", "فرصت محدود", "ارزان‌ترین قیمت بازار",

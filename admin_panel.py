@@ -4547,14 +4547,23 @@ async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFA
     total_chunks = (total + chunk_size - 1) // chunk_size
 
     batch_state["is_active"] = True
+    batch_state["is_cancelled"] = False
     batch_state["publish_status"] = publish_status
     save_woo_batch_state(batch_state)
+
+    if context and context.application:
+        context.application.bot_data["woo_batch_cancelled"] = False
+
+    cancel_kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🛑 توقف فوری و لغو پارت", callback_data="adm_woo_batch_cancel")]
+    ])
 
     status_msg = await query.edit_message_text(
         f"⏳ <b>آغاز پارت {chunk_num} از {total_chunks} ({current_chunk_count} محصول)...</b>\n"
         f"▫️ محدوده کاتالوگ: از {start_idx + 1:,} تا {end_idx:,}\n"
         f"▫️ تاخیر امنیتی: ۱۰ ثانیه برای هر کالا\n"
         f"▫️ لطفاً صبور باشید...",
+        reply_markup=cancel_kb,
         parse_mode="HTML"
     )
 
@@ -4563,12 +4572,54 @@ async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFA
     chunk_review = 0
     chunk_errors = 0
 
+    from woo_sync_service import get_woo_live_status
+
     for i in range(start_idx, end_idx):
+        # بررسی درخواست لغو از سوی ادمین
+        is_canc = False
+        if context and context.application and context.application.bot_data.get("woo_batch_cancelled"):
+            is_canc = True
+        else:
+            latest_bs = get_woo_batch_state()
+            if latest_bs.get("is_cancelled"):
+                is_canc = True
+
+        if is_canc:
+            if context and context.application:
+                context.application.bot_data["woo_batch_cancelled"] = False
+            batch_state["is_active"] = False
+            batch_state["is_cancelled"] = False
+            batch_state["current_index"] = i
+            save_woo_batch_state(batch_state)
+
+            stop_txt = (
+                "🛑 <b>عملیات ارسال دسته‌ای توسط ادمین متوقف شد.</b>\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                f"▫️ موقعیت ذخیره‌شده: <b>کالای {i:,} از {total:,}</b>\n"
+                f"▫️ ✅ موفق در این پارت: <b>{chunk_sent}</b>\n"
+                f"▫️ 🔒 محافظت‌شده AEG: <b>{chunk_skipped_aeg}</b>\n"
+                f"▫️ ⚠️ صف بازبینی: <b>{chunk_review}</b>\n"
+                f"▫️ ❌ خطاهای API: <b>{chunk_errors}</b>\n\n"
+                "💡 موقعیت در دیتابیس ثبت شد. هر زمان بخواهید می‌توانید از همین کالا ادامه دهید."
+            )
+            res_kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"▶️ ادامه از کالای {i + 1:,}", callback_data="adm_woo_batch_run|resume")],
+                [InlineKeyboardButton("🔙 بازگشت به ووکامرس", callback_data="adm_woo_hub")]
+            ])
+            await status_msg.edit_text(stop_txt, reply_markup=res_kb, parse_mode="HTML")
+            return
+
         product = JSON_PRODUCTS[i]
         curr_num_in_chunk = (i - start_idx) + 1
         global_curr_num = i + 1
         pname = str(product.get("name") or product.get("title") or "کالای بدون عنوان").strip()[:35]
         pid = str(product.get("product_id") or product.get("id") or "")
+
+        # بررسی پیام هشدار زنده (مانند ۴۲۹)
+        live_info = get_woo_live_status()
+        live_banner = ""
+        if live_info.get("msg"):
+            live_banner = f"\n\n🚨 <b>هشدار زنده API:</b> <code>{live_info['msg']}</code>"
 
         # نمایش کارت پیشرفت زنده
         try:
@@ -4581,8 +4632,9 @@ async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFA
                 f"▫️ ✅ موفق در این پارت: <b>{chunk_sent}</b>\n"
                 f"▫️ 🔒 محافظت‌شده (AEG): <b>{chunk_skipped_aeg}</b>\n"
                 f"▫️ ⚠️ صف بازبینی: <b>{chunk_review}</b>\n"
-                f"▫️ ❌ خطاهای API: <b>{chunk_errors}</b>\n\n"
+                f"▫️ ❌ خطاهای API: <b>{chunk_errors}</b>{live_banner}\n\n"
                 f"⏱ <i>تاخیر هوشمند محافظتی ۱۰ ثانیه‌ای فعال است...</i>",
+                reply_markup=cancel_kb,
                 parse_mode="HTML"
             )
         except Exception:
