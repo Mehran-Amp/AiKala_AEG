@@ -219,6 +219,7 @@ def create_full_backup_zip(prefix: str = "AiKala_Backup") -> Tuple[str, Dict[str
         ("woo_model_map.json", "woocommerce/woo_model_map.json"),
         ("woo_settings.json", "woocommerce/woo_settings.json"),
         ("woo_review_queue.json", "woocommerce/woo_review_queue.json"),
+        ("woo_batch_state.json", "woocommerce/woo_batch_state.json"),
         ("content_sources.json", "woocommerce/content_sources.json"),
         # ۶. ادمین‌ها و دسترسی‌ها و امنیت
         ("admin_ids.json", "settings/admin_ids.json"),
@@ -370,6 +371,7 @@ def restore_full_replace(zip_file_bytes_or_path) -> Tuple[bool, str]:
             "woo_model_map.json": ("woo_model_map.json", "نگاشت پارت‌نامبرها و مدل‌های سایت"),
             "woo_settings.json": ("woo_settings.json", "تنظیمات همگام‌سازی ووکامرس"),
             "woo_review_queue.json": ("woo_review_queue.json", "صف بازبینی دستی محصولات سایت"),
+            "woo_batch_state.json": ("woo_batch_state.json", "وضعیت پارت‌بندی و ارسال دسته‌ای ووکامرس"),
             "content_sources.json": ("content_sources.json", "لاگ مراجع رسمی و اعتبارسنجی محتوا"),
             "admin_ids.json": ("admin_ids.json", "لیست ادمین‌های فرعی و دسترسی‌ها"),
             "credentials.json": ("credentials.json", "اطلاعات دسترسی سرویس‌ها"),
@@ -512,18 +514,23 @@ def restore_smart_merge(zip_file_bytes_or_path) -> Tuple[bool, str, Dict[str, in
                 try:
                     b_cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='support_agents'")
                     if b_cur.fetchone():
-                        b_cur.execute("SELECT name, username, user_id, active FROM support_agents")
-                        agents = b_cur.fetchall()
-                        c_cur = curr_conn.cursor()
-                        for ag in agents:
-                            try:
-                                c_cur.execute(
-                                    "INSERT OR IGNORE INTO support_agents (name, username, user_id, active) VALUES (?, ?, ?, ?)",
-                                    ag
-                                )
-                            except Exception:
-                                pass
-                        curr_conn.commit()
+                        b_cur.execute("PRAGMA table_info(support_agents)")
+                        b_cols = [r[1] for r in b_cur.fetchall() if r[1] != "id"]
+                        if b_cols:
+                            col_str = ", ".join(b_cols)
+                            placeholders = ", ".join(["?" for _ in b_cols])
+                            b_cur.execute(f"SELECT {col_str} FROM support_agents")
+                            agents = b_cur.fetchall()
+                            c_cur = curr_conn.cursor()
+                            for ag in agents:
+                                try:
+                                    c_cur.execute(
+                                        f"INSERT OR IGNORE INTO support_agents ({col_str}) VALUES ({placeholders})",
+                                        ag
+                                    )
+                                except Exception:
+                                    pass
+                            curr_conn.commit()
                 except Exception as e:
                     logger.warning(f"Error merging support agents: {e}")
 
@@ -877,6 +884,21 @@ def _reload_in_memory_services():
     try:
         from ai_content_cache import load_ai_content_cache
         load_ai_content_cache()
+    except Exception:
+        pass
+
+    try:
+        import search_engine
+        search_engine.load_hidden_product_ids()
+    except Exception:
+        pass
+
+    try:
+        import woo_sync_service
+        woo_sync_service.load_woo_mappings()
+        woo_sync_service.load_woo_settings()
+        woo_sync_service.load_woo_review_queue()
+        woo_sync_service.get_woo_batch_state()
     except Exception:
         pass
 
