@@ -1315,12 +1315,12 @@ def publish_single_product_to_woo(product: dict, status: Optional[str] = None) -
 
     model_key = extract_product_model_key(product)
 
-    # استخراج مشخصات
+    # ۱. استخراج یا بازیابی مشخصات فنی
     specs = {}
     if isinstance(product.get("specs"), dict) and product.get("specs"):
-        specs = product["specs"]
+        specs = product["specs"].copy()
     elif isinstance(product.get("ai_specs"), dict) and product.get("ai_specs"):
-        specs = product["ai_specs"]
+        specs = product["ai_specs"].copy()
     elif isinstance(product.get("more_details"), str) and product.get("more_details"):
         # تبدیل رشته به دیکشنری
         parts = [p.strip() for p in product["more_details"].split("|") if ":" in p]
@@ -1328,22 +1328,54 @@ def publish_single_product_to_woo(product: dict, status: Optional[str] = None) -
             k, v = p.split(":", 1)
             specs[k.strip()] = v.strip()
 
-    # ۱. بررسی کش دائمی برای مشخصات فنی
+    # بررسی کش دائمی برای مشخصات فنی
     from ai_content_cache import get_cached_ai_content, save_product_ai_content
     cached = get_cached_ai_content(pid, model_key)
-    if cached and isinstance(cached.get("ai_specs"), dict) and len(cached["ai_specs"]) >= 10:
+    if cached and isinstance(cached.get("ai_specs"), dict) and len(cached["ai_specs"]) >= 8:
         specs.update(cached["ai_specs"])
         product["specs"] = specs
-    elif len(specs) < 10:
-        # اگر در کش نبود، استخراج با هوش مصنوعی
+        product["ai_specs"] = specs
+    elif len(specs) < 6:
+        # اگر مشخصات در دیتابیس ربات ناقص یا بدون مشخصات بود، تولید آنی با هوش مصنوعی (همانند دکمه تکمیل کالاهای بدون مشخصات)
         try:
-            from gemini_enricher import get_gemini_api_key, call_gemini_api_with_error
-            g_key = get_gemini_api_key()
-            if g_key:
-                extracted, _ = call_gemini_api_with_error(g_key, product)
-                if extracted and isinstance(extracted, dict) and len(extracted) > len(specs):
-                    specs.update(extracted)
-                    product["specs"] = specs
+            from gemini_enricher import (
+                get_ai_settings, get_gemini_api_key, get_deepseek_api_key,
+                call_gemini_api_with_error, call_deepseek_api_with_error,
+                sync_save_ai_specs
+            )
+            ai_sett = get_ai_settings()
+            provider = settings.get("ai_provider") or ai_sett.get("provider", "gemini")
+            extracted_specs = None
+            
+            if provider == "deepseek":
+                ds_k = get_deepseek_api_key()
+                if ds_k:
+                    extracted_specs, _ = call_deepseek_api_with_error(ds_k, product)
+            
+            if not extracted_specs or len(extracted_specs) < 4:
+                g_k = get_gemini_api_key()
+                if g_k:
+                    extracted_specs, _ = call_gemini_api_with_error(g_k, product)
+
+            if extracted_specs and isinstance(extracted_specs, dict) and len(extracted_specs) > len(specs):
+                specs.update(extracted_specs)
+                product["specs"] = specs
+                product["ai_specs"] = specs
+                product["more_details"] = " | ".join([f"{k}: {v}" for k, v in specs.items()])
+                
+                # ثبت فوری و دائمی در دیتابیس SQLite ربات و فایل catalog_products.json
+                sync_save_ai_specs(pid, specs)
+                try:
+                    from search_engine import JSON_PRODUCTS
+                    if JSON_PRODUCTS:
+                        for jp in JSON_PRODUCTS:
+                            if str(jp.get("product_id") or jp.get("id")) == pid:
+                                jp["specs"] = specs
+                                jp["ai_specs"] = specs
+                                jp["more_details"] = product["more_details"]
+                                break
+                except Exception:
+                    pass
         except Exception as e:
             logger.warning(f"Error enriching specs on publish for {pname}: {e}")
 
@@ -1357,6 +1389,11 @@ def publish_single_product_to_woo(product: dict, status: Optional[str] = None) -
         overview = generate_woo_ai_description(product, specs)
         if overview:
             product["ai_generated_description"] = overview
+            try:
+                from gemini_enricher import sync_save_ai_description
+                sync_save_ai_description(pid, overview)
+            except Exception:
+                pass
 
     # اعتبارسنجی
     is_valid, val_reason = validate_product_content(product, specs, overview)
