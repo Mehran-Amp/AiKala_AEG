@@ -362,6 +362,54 @@ def build_product_share_text(p: Optional[Dict[str, Any]], pid_str: str) -> str:
     return "\n".join(lines)
 
 
+# ─── اعتبارسنجی و بستن خودکار تگ‌های HTML تلگرام ───
+
+def ensure_closed_html_tags(html_text: str) -> str:
+    """
+    بررسی و بستن خودکار تمامی تگ‌های باز مانده HTML در تلگرام (blockquote, b, i, code, a, s, u, pre)
+    تا هرگز خطای "Can't parse entities: can't find end tag" رخ ندهد.
+    """
+    if not html_text:
+        return ""
+    import re
+    tag_pattern = re.compile(r'<(/?)([a-zA-Z]+)(?:\s+[^>]*)?>')
+    stack = []
+    
+    for match in tag_pattern.finditer(html_text):
+        is_closing = bool(match.group(1))
+        tag_name = match.group(2).lower()
+        if tag_name in ['br', 'hr', 'img']:
+            continue
+        if not is_closing:
+            stack.append(tag_name)
+        else:
+            if stack and stack[-1] == tag_name:
+                stack.pop()
+            elif tag_name in stack:
+                while stack and stack[-1] != tag_name:
+                    stack.pop()
+                if stack:
+                    stack.pop()
+                    
+    closing_tags = "".join([f"</{tag}>" for tag in reversed(stack)])
+    return html_text + closing_tags
+
+
+def safe_telegram_truncate(text: str, max_chars: int = 4080) -> str:
+    """
+    برش ایمن متن با حفظ کامل ساختار تگ‌های HTML تلگرام
+    """
+    if not text:
+        return ""
+    if len(text) <= max_chars:
+        return ensure_closed_html_tags(text)
+    truncated = text[:max_chars]
+    last_break = max(truncated.rfind("\n\n"), truncated.rfind("\n"), truncated.rfind("</blockquote>"))
+    if last_break > max_chars * 0.65:
+        truncated = truncated[:last_break]
+    return ensure_closed_html_tags(truncated)
+
+
 # ─── قالب‌بندی پیام مشخصات کالا ───
 
 def build_boxed_product_message(p: Dict[str, Any]) -> str:
@@ -498,7 +546,7 @@ def build_boxed_product_message(p: Dict[str, Any]) -> str:
     msg_parts.append(share_signature)
 
     msg = "\n\n".join(msg_parts)
-    return msg
+    return ensure_closed_html_tags(msg)
 
 # ─── کیبورد زیر هر کارت کالا ───
 

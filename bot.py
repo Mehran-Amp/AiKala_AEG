@@ -3216,12 +3216,14 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         if success:
             updated_msg = build_boxed_product_message(prod)
             adm_kb = product_inline_keyboard(pid, context, show_photo_button=True, is_admin=True, view_as_customer=False)
+            from keyboards import safe_telegram_truncate, ensure_closed_html_tags
+            safe_text = safe_telegram_truncate(updated_msg, max_chars=4080)
             try:
                 from telegram import LinkPreviewOptions
                 lp_opts = LinkPreviewOptions(is_disabled=True)
                 if query.message.caption is not None:
                     if len(updated_msg) <= 1024:
-                        await query.edit_message_caption(caption=updated_msg, reply_markup=adm_kb, parse_mode="HTML")
+                        await query.edit_message_caption(caption=ensure_closed_html_tags(updated_msg), reply_markup=adm_kb, parse_mode="HTML")
                     else:
                         p_name = get_product_name(prod)
                         short_cap = f"🌟 <b>{p_name}</b>\n✅ <i>مشخصات جامع هوش مصنوعی استخراج شد.</i>"
@@ -3229,18 +3231,17 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                             await query.edit_message_caption(caption=short_cap, parse_mode="HTML")
                         except Exception:
                             pass
-                        safe_text = updated_msg if len(updated_msg) <= 4090 else (updated_msg[:4080] + "...")
                         await query.message.reply_text(safe_text, reply_markup=adm_kb, parse_mode="HTML", link_preview_options=lp_opts)
                 else:
-                    safe_text = updated_msg if len(updated_msg) <= 4090 else (updated_msg[:4080] + "...")
                     await query.edit_message_text(text=safe_text, reply_markup=adm_kb, parse_mode="HTML", link_preview_options=lp_opts)
             except Exception as e_edit:
                 logger.warning(f"Error updating message after AI enrich: {e_edit}")
-                safe_text = updated_msg if len(updated_msg) <= 4090 else (updated_msg[:4080] + "...")
                 try:
                     await query.message.reply_text(safe_text, reply_markup=adm_kb, parse_mode="HTML", disable_web_page_preview=True)
                 except Exception:
-                    pass
+                    import re
+                    clean_txt = re.sub(r'<[^>]+>', '', safe_text)
+                    await query.message.reply_text(clean_txt, reply_markup=adm_kb, disable_web_page_preview=True)
             await query.message.reply_text("✅ <b>مشخصات فنی کالا با موفقیت توسط هوش مصنوعی استخراج و در سیستم ذخیره گردید.</b>", parse_mode="HTML")
         else:
             await query.message.reply_text(

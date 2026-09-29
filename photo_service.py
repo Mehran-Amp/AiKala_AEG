@@ -1083,7 +1083,8 @@ async def send_product_card_and_photos(chat_id: int, product: dict, context: Con
                 logger.warning(f"Failed to send web image for {p_name}: {e}")
 
     # ارسال پنجره مشخصات و قیمت همراه با کیبورد بهینه‌شده و غیرفعال‌سازی پیش‌نمایش لینک (disable link preview)
-    safe_msg = msg if len(msg) <= 4090 else (msg[:4080] + "...")
+    from keyboards import safe_telegram_truncate, ensure_closed_html_tags
+    safe_msg = safe_telegram_truncate(msg, max_chars=4080)
     try:
         from telegram import LinkPreviewOptions
         await context.bot.send_message(
@@ -1093,11 +1094,22 @@ async def send_product_card_and_photos(chat_id: int, product: dict, context: Con
             parse_mode="HTML",
             link_preview_options=LinkPreviewOptions(is_disabled=True)
         )
-    except Exception:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=safe_msg,
-            reply_markup=kb,
-            parse_mode="HTML",
-            disable_web_page_preview=True
-        )
+    except Exception as e_send:
+        logger.warning(f"send_message HTML parsing issue: {e_send}, trying fallback with closed tags/plain text...")
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=ensure_closed_html_tags(safe_msg),
+                reply_markup=kb,
+                parse_mode="HTML",
+                disable_web_page_preview=True
+            )
+        except Exception:
+            import re
+            clean_plain_text = re.sub(r'<[^>]+>', '', safe_msg)
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=clean_plain_text,
+                reply_markup=kb,
+                disable_web_page_preview=True
+            )
