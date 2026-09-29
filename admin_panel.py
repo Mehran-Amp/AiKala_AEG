@@ -5,8 +5,7 @@ AiKala - Admin Panel & Photo Management Controller (admin_panel.py)
 و دریافت هوشمند لینک‌های آلبوم عکس توسط ادمین با محافظت Debounce و وب‌پروبینگ.
 """
 import json
-
-
+import html
 import os
 import io
 import re
