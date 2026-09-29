@@ -524,8 +524,12 @@ def _validate_and_filter_specs(raw_dict: dict) -> Optional[Dict[str, str]]:
 
     specs = {}
     for k, v in raw_dict.items():
-        k_clean = str(k).strip().lstrip("-*▫️• ").replace("_", " ")
-        v_clean = str(v).strip()
+        k_clean = str(k).strip(' \t\n\r"\'`,:{}[]-*▫️•').replace("_", " ")
+        v_clean = str(v).strip(' \t\n\r"\'`,:{}[]-*▫️•')
+
+        # فیلتر مقادیر نامعتبر یا بسیار کوتاه
+        if not k_clean or not v_clean or len(k_clean) < 2 or len(v_clean) < 2:
+            continue
 
         # ۱. بررسی کلمات ممنوعه در کلید (از جمله رنگ، قیمت، گارانتی)
         k_lower = k_clean.lower()
@@ -567,14 +571,15 @@ def _parse_ai_json_response(raw_text: str) -> Optional[Dict[str, str]]:
     # روش پشتیبان خط‌به‌خط
     specs = {}
     for line in cleaned_text.split("\n"):
-        line = line.strip().lstrip("-*▫️•#▪️ ")
+        line = line.strip(' \t\n\r"\'`,:{}[]-*▫️•#▪️ ')
         line = re.sub(r'^\s*[\d۰-۹]+[\.\-\)\s]+\s*', '', line)
         clean_line = line.replace("**", "").replace("__", "").strip()
-        if ":" in clean_line:
-            parts = clean_line.split(":", 1)
-            k = parts[0].strip()
-            v = parts[1].strip()
-            specs[k] = v
+        if ":" in clean_line or "：" in clean_line:
+            parts = clean_line.split(":", 1) if ":" in clean_line else clean_line.split("：", 1)
+            k = parts[0].strip(' \t\n\r"\'`,:{}[]-*▫️•')
+            v = parts[1].strip(' \t\n\r"\'`,:{}[]-*▫️•')
+            if k and v and len(k) >= 2 and len(v) >= 2:
+                specs[k] = v
 
     return _validate_and_filter_specs(specs)
 

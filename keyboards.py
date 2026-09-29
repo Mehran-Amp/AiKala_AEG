@@ -438,10 +438,12 @@ def build_boxed_product_message(p: Dict[str, Any]) -> str:
 
     specs_lines = []
     for k, v in specs.items():
-        if v and str(v).strip() and k not in NON_SPEC_KEYS:
-            val_str = str(v).strip()
-            if val_str not in ["-", "--", "---"]:
-                specs_lines.append(f"▫️ <b>{k}:</b> {val_str}")
+        clean_k = str(k).strip(' \t\n\r"\'`,:{}[]-*▫️•').replace("_", " ")
+        clean_v = str(v).strip(' \t\n\r"\'`,:{}[]-*▫️•')
+        # فیلتر مقادیر نامعتبر، نیمه‌کاره یا علائم نگارشی اضافه
+        if clean_k and clean_v and clean_k not in NON_SPEC_KEYS and len(clean_v) >= 2:
+            if clean_v not in ["-", "--", "---", "نامشخص", "null", "none"]:
+                specs_lines.append(f"▫️ <b>{html.escape(clean_k)}:</b> {html.escape(clean_v)}")
 
     if not specs_lines:
         specs_lines.append("▫️ <i>مشخصات فنی در حال تکمیل توسط هوش مصنوعی و کارشناسان فنی...</i>")
@@ -460,47 +462,41 @@ def build_boxed_product_message(p: Dict[str, Any]) -> str:
             "🛡 <b>گارانتی:</b> ۱۸ ماه گارانتی شرکتی و ۵ سال خدمات پس از فروش"
         )
 
-    # بررسی توضیحات هوش مصنوعی (فقط توضیحات اختصاصی تولیدشده توسط Gemini AI)
+    # نکات برجسته و کلیدی (فقط نکات کوتاه ۴ الی ۶ موردی، نه کل مقاله سئو سایت)
+    ai_highlights = str(p.get("ai_highlights") or "").strip()
     ai_desc = str(p.get("ai_generated_description") or "").strip()
 
     extra_desc_block = ""
-    if ai_desc:
-        # پاکسازی و بهینه‌سازی خوانایی توضیحات تکمیلی
-        desc_lines = []
-        known_keys = [
-            "توان مصرفی (وات)", "روش و محل نصب", "قابلیتهای تکمیلی", "قابلیت‌های تکمیلی",
-            "جنس بدنه", "رنگ بدنه", "کشور سازنده", "مدل", "برند", "قطعات", "مونتاژ",
-            "WiFi", "وای فای", "ظرفیت", "ابعاد", "وزن", "گارانتی", "رنگ درب"
-        ]
-        for raw_line in ai_desc.splitlines():
-            line = raw_line.strip()
-            if not line:
-                continue
-            if line.endswith(":-") or (line.endswith("-") and not any(c.isdigit() for c in line[-3:])):
-                continue
-            if ":" in line or "：" in line:
-                parts = line.split(":", 1) if ":" in line else line.split("：", 1)
-                k_part = parts[0].strip().lstrip("▫️ •-")
-                v_part = parts[1].strip()
-                desc_lines.append(f"▫️ <b>{html.escape(k_part)}:</b> {html.escape(v_part)}")
-                continue
-            matched = False
-            for k in known_keys:
-                if line.startswith(k) and len(line) > len(k):
-                    val = line[len(k):].strip(" :-")
-                    val = val.replace(",", "، ")
-                    desc_lines.append(f"▫️ <b>{html.escape(k)}:</b> {html.escape(val)}")
-                    matched = True
-                    break
-            if not matched:
-                clean_l = line.lstrip("▫️ •-").strip()
-                desc_lines.append(f"▫️ {html.escape(clean_l)}")
-
-        if desc_lines:
-            # ایجاد خط خالی بین هر خط داخل blockquote جهت خوانایی بی‌نظیر
-            clean_desc = "\n\n".join(desc_lines)
+    # اگر نکات کلیدی کوتاه وجود دارد، در تلگرام نمایش داده شود
+    if ai_highlights and not any(ai_highlights.startswith(x) for x in ["#", "##", "نقد و بررسی"]):
+        hl_lines = []
+        for l in ai_highlights.splitlines()[:6]:
+            clean_l = l.strip(' \t\n\r"\'`,:{}[]-*▫️•')
+            if clean_l and len(clean_l) >= 4 and not clean_l.startswith("#"):
+                hl_lines.append(f"▫️ {html.escape(clean_l)}")
+        if hl_lines:
+            clean_hl = "\n".join(hl_lines)
             extra_desc_block = (
-                f"📝 <b>توضیحات تکمیلی و قابلیت‌های کلیدی:</b>\n"
+                f"📝 <b>ویژگی‌های شاخص کالا:</b>\n"
+                f"<blockquote expandable>\n{clean_hl}\n</blockquote>"
+            )
+    elif ai_desc and not any(ai_desc.startswith(x) for x in ["#", "##", "نقد و بررسی", "بخش اول"]):
+        # فقط در صورتی که توضیحات کوتاه خط‌به‌خط باشد (نه مقاله بلند سئو)
+        desc_lines = []
+        for l in ai_desc.splitlines()[:6]:
+            clean_l = l.strip(' \t\n\r"\'`,:{}[]-*▫️•')
+            if clean_l and len(clean_l) >= 4 and not clean_l.startswith(("#", "بخش")):
+                if ":" in clean_l:
+                    parts = clean_l.split(":", 1)
+                    k_part = parts[0].strip(' \t\n\r"\'`,:{}[]-*▫️•')
+                    v_part = parts[1].strip(' \t\n\r"\'`,:{}[]-*▫️•')
+                    desc_lines.append(f"▫️ <b>{html.escape(k_part)}:</b> {html.escape(v_part)}")
+                else:
+                    desc_lines.append(f"▫️ {html.escape(clean_l)}")
+        if desc_lines:
+            clean_desc = "\n".join(desc_lines)
+            extra_desc_block = (
+                f"📝 <b>ویژگی‌های کلیدی:</b>\n"
                 f"<blockquote expandable>\n{clean_desc}\n</blockquote>"
             )
 
