@@ -154,7 +154,9 @@ def get_woo_settings() -> dict:
         "aeg_protected_slugs": ["aeg", "آاگ", "aegkala"],
         "default_publish_status": "draft",  # draft | publish
         "auto_sync_enabled": True,
-        "price_sync_hours": ["04:30"],  # بروزرسانی روزانه ۱ بار در ساعت ۰۴:۳۰ بامداد
+        "auto_price_sync_enabled": True,
+        "price_sync_interval_hours": 6,  # بازه زمانی پیش‌فرض: هر ۶ ساعت یک‌بار (قابل تنظیم: ۳، ۶، ۱۲ یا ۲۴ ساعت)
+        "price_sync_hours": ["04:30"],
         "last_sync_time": "",
         "last_price_sync_time": "",
         "batch_delay_seconds": 1.5,
@@ -2015,33 +2017,80 @@ def sync_prices_to_woocommerce() -> Tuple[int, int, List[str]]:
     return updated_count, failed_count, logs
 
 
+def set_woo_price_sync_interval(interval_hours: int) -> bool:
+    """تنظیم دوره‌ی زمانی بروزرسانی خودکار قیمت‌های ووکامرس (۳، ۶، ۱۲، ۲۴ ساعت یا ۰ برای غیرفعال)"""
+    try:
+        settings = get_woo_settings()
+        settings["price_sync_interval_hours"] = interval_hours
+        settings["auto_price_sync_enabled"] = (interval_hours > 0)
+        save_woo_settings(settings)
+        return True
+    except Exception as e:
+        logger.warning(f"Error saving price sync interval: {e}")
+        return False
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ۸. تسک پس‌زمینه زمان‌بندی‌شده بروزرسانی قیمت ووکامرس (نامتقارن با ربات)
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def woo_price_sync_background_task(bot_instance=None):
     """
-    تسک پس‌زمینه مستقل که در ساعات تعیین‌شده (مثلاً ۱۲:۳۰، ۱۸:۳۰، ۰۲:۰۰)
-    قیمت‌های ووکامرس را بروزرسانی می‌کند تا هیچ تداخلی با آپدیت‌های ربات رخ ندهد.
+    تسک پس‌زمینه زمان‌بندی‌شده دوره‌ای (هر ۳، ۶، ۱۲ یا ۲۴ ساعت)
+    جهت همگام‌سازی و آپدیت خودکار قیمت تمام کالاهای سایت با کاتالوگ ربات
     """
-    logger.info("🌐 [WOO SYNC TASK] تسک پس‌زمینه بروزرسانی قیمت‌های ووکامرس راه‌اندازی شد.")
+    logger.info("🌐 [WOO SYNC TASK] تسک دوره‌ای بروزرسانی قیمت‌های ووکامرس فعال گردید.")
     while True:
         try:
             settings = get_woo_settings()
-            if not settings.get("auto_sync_enabled", True):
+            auto_enabled = settings.get("auto_price_sync_enabled", True) and settings.get("auto_sync_enabled", True)
+            interval_hours = settings.get("price_sync_interval_hours", 6)
+
+            if not auto_enabled or interval_hours <= 0:
                 await asyncio.sleep(60)
                 continue
 
-            now_str = datetime.now().strftime("%H:%M")
-            target_hours = settings.get("price_sync_hours", ["04:30"])
+            last_sync_str = settings.get("last_price_sync_time", "")
+            should_sync = False
 
-            if now_str in target_hours:
-                logger.info(f"🌐 [WOO AUTO-SYNC] آغاز بروزرسانی خودکار قیمت‌های ووکامرس در ساعت {now_str}...")
-                updated, failed, _ = await asyncio.to_thread(sync_prices_to_woocommerce)
+            if not last_sync_str:
+                should_sync = True
+            else:
+                try:
+                    last_dt = datetime.strptime(last_sync_str, "%Y-%m-%d %H:%M:%S")
+                    elapsed_hours = (datetime.now() - last_dt).total_seconds() / 3600.0
+                    if elapsed_hours >= interval_hours:
+                        should_sync = True
+                except Exception:
+                    should_sync = True
+
+            if should_sync:
+                logger.info(f"🌐 [WOO AUTO-SYNC] آغاز بروزرسانی خودکار دوره‌ای قیمت‌های ووکامرس (دوره هر {interval_hours} ساعت)...")
+                updated, failed, logs = await asyncio.to_thread(sync_prices_to_woocommerce)
                 logger.info(f"🌐 [WOO AUTO-SYNC COMPLETED] بروزرسانی شد: {updated} کالا | ناموفق: {failed}")
-                await asyncio.sleep(65)  # عبور از دقیقه فعلی
 
-            await asyncio.sleep(30)
+                if bot_instance and updated > 0:
+                    try:
+                        from config import ADMIN_IDS
+                        admin_msg = (
+                            f"⏰ <b>بروزرسانی خودکار قیمت‌های سایت ووکامرس:</b>\n"
+                            f"━━━━━━━━━━━━━━━━━━━━\n"
+                            f"⏱ دوره تنظیم‌شده: <b>هر {interval_hours} ساعت یک‌بار</b>\n"
+                            f"🟢 تعداد کالاهای بروزرسانی‌شده در سایت: <b>{updated:,} کالا</b>\n"
+                            f"⚠️ بدون تغییر / عدم تطبیق: <b>{failed:,}</b>\n"
+                            f"📅 زمان اجرا: <b>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</b>"
+                        )
+                        for aid in (ADMIN_IDS or []):
+                            try:
+                                await bot_instance.send_message(chat_id=aid, text=admin_msg, parse_mode="HTML")
+                            except Exception:
+                                pass
+                    except Exception as e_notify:
+                        logger.debug(f"Error sending auto-sync notify: {e_notify}")
+
+                await asyncio.sleep(65)
+
+            await asyncio.sleep(60)
         except Exception as e:
             logger.warning(f"Error in woo_price_sync_background_task: {e}")
             await asyncio.sleep(60)

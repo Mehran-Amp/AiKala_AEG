@@ -2659,6 +2659,17 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             return
         await admin_woo_settings_menu(update, context)
 
+    elif data.startswith("adm_woo_interval|"):
+        if not is_admin(update.effective_user.id):
+            await query.answer("⛔️ این بخش تنها در اختیارات ادمین می‌باشد.", show_alert=True)
+            return
+        try:
+            int_val = int(data.split("|")[1])
+        except Exception:
+            int_val = 6
+        from admin_panel import admin_woo_set_interval_handler
+        await admin_woo_set_interval_handler(update, context, interval_hours=int_val)
+
     elif data.startswith("adm_woo_toggle_ai_provider"):
         if not is_admin(update.effective_user.id):
             await query.answer("⛔️ این بخش تنها در اختیارات ادمین می‌باشد.", show_alert=True)

@@ -4958,37 +4958,71 @@ async def admin_woo_settings_menu(update: Update, context: ContextTypes.DEFAULT_
     from woo_sync_service import get_woo_settings
     settings = get_woo_settings()
 
-    hours_str = " ، ".join(settings.get("price_sync_hours", ["04:30"]))
     auto_status = "🟢 روشن (فعال)" if settings.get("auto_sync_enabled") else "🔴 خاموش (غیرفعال)"
     pub_status = "انتشار عمومی (Publish)" if settings.get("default_publish_status") == "publish" else "پیش‌نویس (Draft)"
     woo_ai_provider = settings.get("ai_provider", "gemini")
     woo_ai_label = "♊️ گوگل جمینای (Gemini)" if woo_ai_provider == "gemini" else "🤖 دیپ‌سیک (DeepSeek)"
 
+    interval_h = settings.get("price_sync_interval_hours", 6)
+    last_p_sync = settings.get("last_price_sync_time") or "هنوز انجام نشده"
+    interval_label = f"هر {interval_h} ساعت یک‌بار" if interval_h > 0 else "غیرفعال (فقط دستی)"
+
     msg = (
-        "⚙️ <b>تنظیمات همگام‌سازی ووکامرس و هوش مصنوعی محتوا</b>\n"
+        "⚙️ <b>تنظیمات همگام‌سازی ووکامرس و تایمر آپدیت خودکار قیمت‌ها</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        f"▫️ وضعیت بروزرسانی خودکار: <b>{auto_status}</b>\n"
+        f"▫️ وضعیت کلی همگام‌سازی: <b>{auto_status}</b>\n"
+        f"▫️ ⏱ <b>دوره تایمر بروزرسانی قیمت‌ها:</b> <b>{interval_label}</b>\n"
+        f"▫️ 📅 آخرین اجرای آپدیت قیمت: <code>{last_p_sync}</code>\n"
         f"▫️ وضعیت پیش‌فرض انتشار جدید: <b>{pub_status}</b>\n"
-        f"▫️ 🤖 <b>موتور هوش مصنوعی ووکامرس:</b> <b>{woo_ai_label}</b>\n"
-        f"▫️ ⏰ <b>ساعات آپدیت قیمت سایت:</b> <code>{hours_str}</code>\n\n"
-        "💡 <i>تولید نقد و بررسی، جدول مشخصات فنی، سوالات متداول (FAQ) و نکات کلیدی محصولات سایت بر مبنای موتور انتخابی فوق انجام می‌پذیرد.</i>"
+        f"▫️ 🤖 <b>موتور هوش مصنوعی ووکامرس:</b> <b>{woo_ai_label}</b>\n\n"
+        "💡 <i>جهت تغییر تایمر دوره‌ای بروزرسانی قیمت‌های سایت، از دکمه‌های زیر استفاده نمایید:</i>"
     )
+
+    # دکمه‌های انتخاب دوره زمانی (با نشانگر تیک سبز روی گزینه فعال)
+    btn_3h = f"{'✅ ' if interval_h == 3 else ''}هر ۳ ساعت"
+    btn_6h = f"{'✅ ' if interval_h == 6 else ''}هر ۶ ساعت"
+    btn_12h = f"{'✅ ' if interval_h == 12 else ''}هر ۱۲ ساعت"
+    btn_24h = f"{'✅ ' if interval_h == 24 else ''}هر ۲۴ ساعت"
+    btn_off = f"{'✅ ' if interval_h == 0 else ''}غیرفعال ⛔️"
 
     kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(f"🤖 تغییر هوش مصنوعی ووکامرس ({'DeepSeek ➔' if woo_ai_provider == 'gemini' else 'Gemini ➔'})", callback_data="adm_woo_toggle_ai_provider")
+            InlineKeyboardButton(btn_3h, callback_data="adm_woo_interval|3"),
+            InlineKeyboardButton(btn_6h, callback_data="adm_woo_interval|6")
+        ],
+        [
+            InlineKeyboardButton(btn_12h, callback_data="adm_woo_interval|12"),
+            InlineKeyboardButton(btn_24h, callback_data="adm_woo_interval|24")
+        ],
+        [
+            InlineKeyboardButton(btn_off, callback_data="adm_woo_interval|0")
+        ],
+        [
+            InlineKeyboardButton(f"🤖 هوش مصنوعی: ({'DeepSeek ➔' if woo_ai_provider == 'gemini' else 'Gemini ➔'})", callback_data="adm_woo_toggle_ai_provider")
         ],
         [
             InlineKeyboardButton("🔄 تغییر حالت انتشار (Draft ⟷ Publish)", callback_data="adm_woo_toggle_status")
         ],
         [
-            InlineKeyboardButton("⚡️ تغییر وضعیت بروزرسانی خودکار", callback_data="adm_woo_toggle_auto")
+            InlineKeyboardButton("⚡️ تغییر وضعیت کلی همگام‌سازی", callback_data="adm_woo_toggle_auto")
         ],
         [
             InlineKeyboardButton("🔙 بازگشت به ووکامرس", callback_data="adm_woo_hub")
         ]
     ])
     await query.edit_message_text(msg, reply_markup=kb, parse_mode="HTML")
+
+
+async def admin_woo_set_interval_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, interval_hours: int):
+    """تنظیم دوره تایمر بروزرسانی قیمت‌های ووکامرس"""
+    query = update.callback_query
+    from woo_sync_service import set_woo_price_sync_interval
+    set_woo_price_sync_interval(interval_hours)
+    if interval_hours > 0:
+        await query.answer(f"✅ تایمر آپدیت خودکار قیمت‌های ووکامرس روی «هر {interval_hours} ساعت یک‌بار» تنظیم شد.", show_alert=True)
+    else:
+        await query.answer("⛔️ تایمر آپدیت خودکار قیمت‌ها غیرفعال شد (فقط بروزرسانی دستی فعال است).", show_alert=True)
+    await admin_woo_settings_menu(update, context)
 
 
 async def admin_woo_toggle_ai_provider_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, source: str = "settings"):
