@@ -1,0 +1,24 @@
+{
+  "aikala_root_category_id": 3916,
+  "aeg_protected_category_ids": [
+    202,
+    205,
+    210,
+    215,
+    220
+  ],
+  "aeg_protected_slugs": [
+    "aeg",
+    "آاگ",
+    "aegkala"
+  ],
+  "default_publish_status": "draft",
+  "auto_sync_enabled": true,
+  "price_sync_hours": [
+    "04:30"
+  ],
+  "last_sync_time": "",
+  "last_price_sync_time": "",
+  "batch_delay_seconds": 1.5,
+  "auto_create_subcategories": true
+}

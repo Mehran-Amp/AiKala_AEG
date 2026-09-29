@@ -1,0 +1,38 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+.dev.*
+
+# Python & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Databases & Local Storage
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Backups & Archives
+backups/
+*.zip
+*.tar.gz
+*.tar
+*.bak
+
+# Telegram Sessions & Credentials
+*.session
+*.session-journal
+credentials.json
+token.json
+

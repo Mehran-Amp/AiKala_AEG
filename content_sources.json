@@ -1,0 +1,11 @@
+{
+  "67916": {
+    "sources": [
+      "https://www.google.com/search?q=%D9%85%D9%88%D9%84%D8%AA%DB%8C%20%DA%A9%D9%88%DA%A9%D8%B1%20%D8%AA%D9%81%D8%A7%D9%84%20CY601"
+    ],
+    "extracted_at": "2026-09-28 08:19:54",
+    "validated": true,
+    "validation_notes": "موفقیت‌آمیز در وضعیت publish (بروزرسانی)",
+    "ai_model_used": "gemini-grounded-specs"
+  }
+}
