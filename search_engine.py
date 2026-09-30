@@ -705,6 +705,48 @@ def get_hidden_products_list() -> List[Dict[str, Any]]:
             hidden_items.append(p)
     return hidden_items
 
+def sanitize_product_title(name: str) -> str:
+    """
+    پاکسازی قطعی کلمه نامناسب 'سایر' از عناوین محصولات
+    جلوگیری از نمایش عناوینی مانند 'لباسشویی ال جی سایر مدل 2J3' یا 'تلویزیون 55 اینچ سایر مدل X90L'
+    """
+    if not name or "سایر" not in name:
+        return name
+    n = str(name).strip()
+    n = re.sub(r'\s+سایر\s+مدل\b', ' مدل', n)
+    n = re.sub(r'^(لباسشویی|تلویزیون|یخچال|ظرفشویی|کولر گازی|کولر|جاروبرقی|مایکروویو)\s+سایر\b', r'\1', n)
+    n = re.sub(r'\s+سایر\s+', ' ', n)
+    n = re.sub(r'\s+سایر$', '', n)
+    n = re.sub(r'\s+', ' ', n).strip()
+    return n
+
+
+def auto_heal_catalog_product_titles(file_path: str = "catalog_products.json") -> int:
+    """بررسی و اصلاح خودکار کاتالوگ و حذف کلمه 'سایر' از نام کالاها"""
+    if not os.path.exists(file_path):
+        return 0
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        modified = 0
+        items = data.values() if isinstance(data, dict) else data
+        for p in items:
+            if isinstance(p, dict):
+                nm = p.get("name", "")
+                if "سایر" in nm:
+                    cnm = sanitize_product_title(nm)
+                    if cnm != nm:
+                        p["name"] = cnm
+                        modified += 1
+        if modified > 0:
+            atomic_save_json(file_path, data)
+            logger.info(f"[CATALOG HEALER] Auto-sanitized {modified} product titles in {file_path}")
+        return modified
+    except Exception as e:
+        logger.warning(f"Error in auto_heal_catalog_product_titles: {e}")
+        return 0
+
+
 JSON_PRODUCTS: List[Dict[str, Any]] = []
 
 def load_json_products(file_path: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -725,6 +767,10 @@ def load_json_products(file_path: Optional[str] = None) -> List[Dict[str, Any]]:
         else:
             file_path = "catalog_products.json"
 
+    # پاکسازی خودکار عناوین کاتالوگ روی دیسک در صورت وجود کلمه 'سایر'
+    if file_path and os.path.exists(file_path):
+        auto_heal_catalog_product_titles(file_path)
+
     if os.path.exists(file_path):
         try:
             with open(file_path, "r", encoding="utf-8") as f:
@@ -739,6 +785,13 @@ def load_json_products(file_path: Optional[str] = None) -> List[Dict[str, Any]]:
             for p in raw_products:
                 if not isinstance(p, dict):
                     continue
+
+                # پاکسازی هوشمند عنوان محصول از هرگونه کلمه 'سایر' ناخواسته
+                p_raw_name = str(p.get("name") or p.get("title") or "").strip()
+                if "سایر" in p_raw_name:
+                    p["name"] = sanitize_product_title(p_raw_name)
+                    if "title" in p:
+                        p["title"] = p["name"]
 
                 # یکسان‌سازی عنوان دسته‌بندی
                 if "category" not in p and "category_name" in p:

@@ -1679,7 +1679,9 @@ def publish_single_product_to_woo(product: dict, status: Optional[str] = None) -
         return False, "🔒 این محصول متعلق به برند آاگ (AEG) است و طبق قانون حفاظت، ارسال آن به ووکامرس مسدود است.", None
 
     pid = str(product.get("product_id") or product.get("id") or "").strip()
-    pname = product.get("name") or product.get("title", "")
+    raw_pname = product.get("name") or product.get("title", "")
+    from search_engine import sanitize_product_title
+    pname = sanitize_product_title(raw_pname)
     price = int(product.get("price") or 0)
     
     settings = get_woo_settings()

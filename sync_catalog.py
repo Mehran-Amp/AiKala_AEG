@@ -49,6 +49,30 @@ def fetch_html(url: str) -> str:
     with urllib.request.urlopen(req, context=ctx, timeout=20) as resp:
         return resp.read().decode('utf-8', errors='ignore')
 
+
+def detect_tv_brand(model: str, subgroup: str = "") -> str:
+    combined = f"{subgroup} {model}".lower()
+    core = re.sub(r'^\d{2,3}', '', model).strip().lower()
+    if re.search(r'^(xr|x\d|a80|a90|a95|z9|s30)', core) or "سونی" in combined or "sony" in combined:
+        return "سونی"
+    if re.search(r'^(qned|nano|oled|ur\d|ut\d|uq\d|up\d|lm\d|g4|c4|b4)', core) or "ال جی" in combined or "lg" in combined:
+        return "ال جی"
+    if re.search(r'^(qn\d|q\d{2}|du\d{4}|cu\d{4}|au\d{4}|tu\d{4}|bu\d{4})', core) or "سامسونگ" in combined or "samsung" in combined:
+        return "سامسونگ"
+    if re.search(r'^(u\d[a-z]|u\d{4}|a6[a-z]|a7[a-z]|max)', core) or "هایسنس" in combined or "hisense" in combined:
+        return "هایسنس"
+    if "z870" in core or "توشیبا" in combined or "toshiba" in combined:
+        return "توشیبا"
+    if "pus" in core or "oled770" in core or "فیلیپس" in combined or "philips" in combined:
+        return "فیلیپس"
+    if "ua85006" in core or "شیائومی" in combined or "xiaomi" in combined:
+        return "شیائومی"
+    for b_name in ["سونی", "ال جی", "سامسونگ", "شیائومی", "هایسنس", "توشیبا", "فیلیپس", "پاناسونیک", "شارپ"]:
+        if b_name in combined:
+            return b_name
+    return ""
+
+
 def extract_products():
     catalog = {}
     categories_tree = {
@@ -110,20 +134,25 @@ def extract_products():
                 os_sys = row_dict.get("pa_operating-system", "")
 
                 # تشخیص سایز و برند از روی مدل یا ساب‌گروپ
-                brand = "سایر"
-                for b_name in ["سونی", "ال جی", "سامسونگ", "شیائومی", "هایسنس", "توشیبا", "فیلیپس", "پاناسونیک", "شارپ"]:
-                    if b_name in current_subgroup or b_name in model:
-                        brand = b_name
-                        break
+                brand = detect_tv_brand(model, current_subgroup)
+                if not brand:
+                    for b_name in ["سونی", "ال جی", "سامسونگ", "شیائومی", "هایسنس", "توشیبا", "فیلیپس", "پاناسونیک", "شارپ"]:
+                        if b_name in current_subgroup or b_name in model:
+                            brand = b_name
+                            break
+                brand = brand or "سایر"
 
                 size_m = re.search(r'(\d{2,3})\s*(?:اینچ|inch)?', model)
                 size_str = f"{size_m.group(1)} اینچ" if size_m else (current_subgroup if "اینچ" in current_subgroup else "نامشخص")
+
+                brand_title = f"{brand} " if brand and brand != "سایر" else ""
+                tv_name = re.sub(r'\s+', ' ', f"تلویزیون {size_str} {brand_title}مدل {model}").strip()
 
                 catalog[pid] = {
                     "product_id": pid,
                     "category_key": "tv",
                     "category_name": "تلویزیون",
-                    "name": f"تلویزیون {size_str} {brand} مدل {model}".strip(),
+                    "name": tv_name,
                     "model_number": model,
                     "brand": brand,
                     "size": size_str,
@@ -220,11 +249,18 @@ def extract_products():
                 elif "داکت" in model or "سقفی" in model:
                     ac_type = "داکت اسپلیت"
 
+                brand_title = f"{brand} " if brand and brand != "سایر" else ""
+                cap_title = f"{cap_m.group(1)} " if cap_m else ""
+                if "کولر" in model:
+                    ac_name = model.strip()
+                else:
+                    ac_name = re.sub(r'\s+', ' ', f"کولر گازی {brand_title}{cap_title}مدل {model}").strip()
+
                 catalog[pid] = {
                     "product_id": pid,
                     "category_key": "conditioner",
                     "category_name": "کولر گازی",
-                    "name": model if "کولر" in model else f"کولر گازی {brand} {cap_str} {model}".strip(),
+                    "name": ac_name,
                     "model_number": model,
                     "brand": brand,
                     "capacity_btu": cap_str,
@@ -308,11 +344,15 @@ def extract_products():
                         brand = b_name
                         break
 
+                brand_title = f"{brand} " if brand and brand != "سایر" else ""
+                plan_title = f"{plan} " if plan and plan != "سایر" else ""
+                fridge_name = re.sub(r'\s+', ' ', f"یخچال {brand_title}{plan_title}مدل {model}").strip()
+
                 catalog[pid] = {
                     "product_id": pid,
                     "category_key": "refrigerator",
                     "category_name": "یخچال فریزر",
-                    "name": f"یخچال {brand} {plan} مدل {model}".strip(),
+                    "name": fridge_name,
                     "model_number": model,
                     "brand": brand,
                     "plan": plan,
@@ -388,22 +428,47 @@ def extract_products():
                 score = row_dict.get("overall-score", "")
                 more_details = row_dict.get("pa_more-details", "")
 
-                brand = current_brand or "سایر"
-                for b_name in ["بوش", "ال جی", "سامسونگ", "هایسنس", "هیتاچی"]:
-                    if b_name in current_brand or b_name in model:
+                brand = current_brand or ""
+                for b_name in ["بوش", "ال جی", "سامسونگ", "هایسنس", "هیتاچی", "دوو", "بکو", "میدیا", "شارپ", "پاناسونیک", "آاگ", "aeg", "bosch", "lg", "samsung"]:
+                    if b_name in current_brand or b_name in model.lower():
                         brand = b_name
                         break
 
-                cap_str = f"{capacity_kg} کیلو" if capacity_kg else "سایر"
+                # استخراج دقیق ظرفیت کیلوگرم از مدل یا ستون جدول
+                cap_val = str(capacity_kg or "").strip()
+                if not cap_val or cap_val == "سایر":
+                    cap_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:کیلو|کیلویی|kg)', model, re.IGNORECASE)
+                    if cap_match:
+                        cap_val = cap_match.group(1)
+                    else:
+                        nm = re.search(r'\b(6|7|8|9|10|10\.5|11|12|14|15|16|17|18|19|20|21)\b', model)
+                        if nm:
+                            cap_val = nm.group(1)
+                        else:
+                            cap_val = ""
+
+                brand_clean = brand if brand and brand != "سایر" else ""
+                brand_title_part = f"{brand_clean} " if brand_clean else ""
+                cap_title_part = f"{cap_val} کیلو " if cap_val else ""
+
+                clean_m = model.strip()
+                if cap_val and f"{cap_val} کیلو" in clean_m:
+                    cap_title_part = ""
+                if brand_clean and brand_clean in clean_m:
+                    brand_title_part = ""
+
+                wm_name = re.sub(r'\s+', ' ', f"لباسشویی {brand_title_part}{cap_title_part}مدل {clean_m}").strip()
+                cap_str = f"{cap_val} کیلو" if cap_val else "سایر"
+                brand_tree = brand or "سایر"
 
                 catalog[pid] = {
                     "product_id": pid,
                     "category_key": "washing_machine",
                     "category_name": "ماشین لباسشویی",
-                    "name": f"لباسشویی {brand} {cap_str} مدل {model}".strip(),
+                    "name": wm_name,
                     "model_number": model,
-                    "brand": brand,
-                    "capacity_kg": capacity_kg,
+                    "brand": brand_tree,
+                    "capacity_kg": cap_val or capacity_kg,
                     "plan": plan,
                     "price": price,
                     "status": "b" if price > 0 else "o",
@@ -479,11 +544,14 @@ def extract_products():
 
                 baskets = "3 طبقه" if any(k in model for k in ["325", "425", "6050", "SMS8", "SMS6", "SMS4"]) else "2 یا 3 طبقه"
 
+                brand_title = f"{brand} " if brand and brand != "سایر" else ""
+                dw_name = re.sub(r'\s+', ' ', f"ظرفشویی {brand_title}مدل {model}").strip()
+
                 catalog[pid] = {
                     "product_id": pid,
                     "category_key": "dishwasher",
                     "category_name": "ماشین ظرفشویی",
-                    "name": f"ظرفشویی {brand} مدل {model}".strip(),
+                    "name": dw_name,
                     "model_number": model,
                     "brand": brand,
                     "baskets": baskets,
