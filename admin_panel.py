@@ -4693,7 +4693,7 @@ async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFA
                 chunk_errors += 1
                 batch_state["errors_count"] = batch_state.get("errors_count", 0) + 1
         except Exception as e:
-            logger.warning(f"Batch publish error on {pid}: {e}")
+            logger.error(f"Batch publish error on {pid}: {e}", exc_info=True)
             chunk_errors += 1
             batch_state["errors_count"] = batch_state.get("errors_count", 0) + 1
 

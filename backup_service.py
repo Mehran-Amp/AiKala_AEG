@@ -777,7 +777,9 @@ def restore_smart_merge(zip_file_bytes_or_path) -> Tuple[bool, str, Dict[str, in
                 curr_wmap = {}
                 if os.path.exists("woo_product_map.json"):
                     with open("woo_product_map.json", "r", encoding="utf-8") as f:
-                        curr_wmap = json.load(f)
+                        loaded_w = json.load(f)
+                        if isinstance(loaded_w, dict):
+                            curr_wmap = loaded_w
                 w_added = 0
                 if isinstance(b_wmap, dict):
                     for k, v in b_wmap.items():
@@ -798,7 +800,9 @@ def restore_smart_merge(zip_file_bytes_or_path) -> Tuple[bool, str, Dict[str, in
                 curr_mmap = {}
                 if os.path.exists("woo_model_map.json"):
                     with open("woo_model_map.json", "r", encoding="utf-8") as f:
-                        curr_mmap = json.load(f)
+                        loaded_m = json.load(f)
+                        if isinstance(loaded_m, dict):
+                            curr_mmap = loaded_m
                 if isinstance(b_mmap, dict):
                     m_changed = False
                     for k, v in b_mmap.items():

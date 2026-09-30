@@ -189,7 +189,16 @@ def get_woo_product_map() -> dict:
     if os.path.exists(WOO_PRODUCT_MAP_FILE):
         try:
             with open(WOO_PRODUCT_MAP_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                d = json.load(f)
+                if isinstance(d, dict):
+                    return d
+                elif isinstance(d, list):
+                    res = {}
+                    for item in d:
+                        if isinstance(item, dict):
+                            for k, v in item.items():
+                                res[str(k)] = int(v) if str(v).isdigit() else v
+                    return res
         except Exception:
             return {}
     return {}
@@ -197,6 +206,8 @@ def get_woo_product_map() -> dict:
 
 def save_woo_product_map(product_map: dict) -> bool:
     """ذخیره نگاشت کالاها"""
+    if not isinstance(product_map, dict):
+        return False
     try:
         with open(WOO_PRODUCT_MAP_FILE, "w", encoding="utf-8") as f:
             json.dump(product_map, f, ensure_ascii=False, indent=2)
@@ -210,7 +221,16 @@ def get_woo_model_map() -> dict:
     if os.path.exists(WOO_MODEL_MAP_FILE):
         try:
             with open(WOO_MODEL_MAP_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                d = json.load(f)
+                if isinstance(d, dict):
+                    return d
+                elif isinstance(d, list):
+                    res = {}
+                    for item in d:
+                        if isinstance(item, dict):
+                            for k, v in item.items():
+                                res[str(k)] = int(v) if str(v).isdigit() else v
+                    return res
         except Exception:
             return {}
     return {}
@@ -218,6 +238,8 @@ def get_woo_model_map() -> dict:
 
 def save_woo_model_map(model_map: dict) -> bool:
     """ذخیره نگاشت پارت‌نامبرها به شناسه ووکامرس"""
+    if not isinstance(model_map, dict):
+        return False
     try:
         with open(WOO_MODEL_MAP_FILE, "w", encoding="utf-8") as f:
             json.dump(model_map, f, ensure_ascii=False, indent=2)
@@ -259,19 +281,29 @@ def find_existing_woo_product(product: dict, pid: str) -> Tuple[Optional[int], s
     خروجی: (woo_id, match_source)
     """
     product_map = get_woo_product_map()
+    if not isinstance(product_map, dict):
+        product_map = {}
     model_map = get_woo_model_map()
+    if not isinstance(model_map, dict):
+        model_map = {}
     model_key = extract_product_model_key(product)
 
     # لایه ۱: نگاشت مستقیم PID
     if pid in product_map and product_map[pid]:
-        return int(product_map[pid]), "local_pid_map"
+        try:
+            return int(product_map[pid]), "local_pid_map"
+        except (ValueError, TypeError):
+            pass
 
     # لایه ۲: نگاشت مدل نرمال‌شده
     if model_key and model_key in model_map and model_map[model_key]:
-        woo_id = int(model_map[model_key])
-        product_map[pid] = woo_id
-        save_woo_product_map(product_map)
-        return woo_id, "local_model_map"
+        try:
+            woo_id = int(model_map[model_key])
+            product_map[pid] = woo_id
+            save_woo_product_map(product_map)
+            return woo_id, "local_model_map"
+        except (ValueError, TypeError):
+            pass
 
     # لایه ۳: استعلام زنده با SKU در ووکامرس
     sku = f"AIKALA-{pid}"
@@ -404,7 +436,9 @@ def log_content_source(pid: str, sources: List[str], validated: bool, notes: str
     if os.path.exists(CONTENT_SOURCES_FILE):
         try:
             with open(CONTENT_SOURCES_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                loaded = json.load(f)
+                if isinstance(loaded, dict):
+                    data = loaded
         except Exception:
             data = {}
     
@@ -1477,6 +1511,8 @@ def build_woo_attributes_payload(product: dict, specs: Dict[str, str]) -> List[d
     تبدیل مشخصات کامل فنی به اتریبیوت‌های بومی ووکامرس (Attributes)
     جهت نمایش خودکار در تب ویژگی‌های قالب و فیلترهای ووکامرس
     """
+    if not isinstance(specs, dict):
+        specs = {}
     attributes = []
     # ۱. افزودن برند سازنده
     brand = str(product.get("brand") or "").strip()
@@ -1530,6 +1566,8 @@ def build_woo_tags_payload(product: dict, specs: Dict[str, str], focus_kw: str =
     - کلمه کلیدی کانونی سئو (Focus Keyword)
     - قابلیت‌های کلیدی و فناوری‌های اختصاصی (4K, OLED, اینورتر، ...)
     """
+    if not isinstance(specs, dict):
+        specs = {}
     raw_tags = set()
     brand = str(product.get("brand") or "").strip()
     category = str(product.get("category_name") or product.get("category") or "").strip()
@@ -1840,6 +1878,8 @@ def publish_single_product_to_woo(product: dict, status: Optional[str] = None) -
     # ۲. کشف هوشمند کالای موجود در سایت با سیستم چندلایه ضد-تکرار
     existing_woo_id, match_source = find_existing_woo_product(product, pid)
     product_map = get_woo_product_map()
+    if not isinstance(product_map, dict):
+        product_map = {}
 
     if existing_woo_id:
         # بروزرسانی امن (PUT) - جلوگیری قطعی از ثبت تکراری
@@ -1860,8 +1900,9 @@ def publish_single_product_to_woo(product: dict, status: Optional[str] = None) -
                     save_woo_product_map(product_map)
                     if model_key:
                         m_map = get_woo_model_map()
-                        m_map[model_key] = existing_woo_id
-                        save_woo_model_map(m_map)
+                        if isinstance(m_map, dict):
+                            m_map[model_key] = existing_woo_id
+                            save_woo_model_map(m_map)
                     ok, res = _make_woo_request(f"products/{existing_woo_id}", "PUT", payload)
                     action_name = "بروزرسانی"
             except Exception:
@@ -1869,14 +1910,17 @@ def publish_single_product_to_woo(product: dict, status: Optional[str] = None) -
 
     if ok and isinstance(res, dict) and "id" in res:
         woo_id = int(res["id"])
+        if not isinstance(product_map, dict):
+            product_map = {}
         product_map[pid] = woo_id
         save_woo_product_map(product_map)
 
         # نگاشت پارت‌نامبر جهت عدم درج مجدد با مدل مشابه
         if model_key:
             model_map = get_woo_model_map()
-            model_map[model_key] = woo_id
-            save_woo_model_map(model_map)
+            if isinstance(model_map, dict):
+                model_map[model_key] = woo_id
+                save_woo_model_map(model_map)
 
         # ثبت لاگ منبع
         log_content_source(

@@ -57,9 +57,9 @@ def load_ai_content_cache() -> Dict[str, Any]:
             with open(AI_CONTENT_CACHE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 if isinstance(data, dict):
-                    if "products" not in data:
-                        data = {"products": data, "models": {}}
-                    if "models" not in data:
+                    if "products" not in data or not isinstance(data["products"], dict):
+                        data["products"] = {}
+                    if "models" not in data or not isinstance(data["models"], dict):
                         data["models"] = {}
                     _MEMORY_CACHE = data
                     return _MEMORY_CACHE
