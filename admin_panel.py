@@ -4431,7 +4431,8 @@ async def admin_woo_hub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🚀 ارسال / بروزرسانی انبوه محصولات", callback_data="adm_woo_batch_prompt")
+            InlineKeyboardButton("🚀 ارسال کل کاتالوگ (انبوه)", callback_data="adm_woo_batch_prompt"),
+            InlineKeyboardButton("📂 ارسال یک دسته‌بندی خاص", callback_data="adm_woo_cat_select")
         ],
         [
             InlineKeyboardButton("🧪 تست و ارسال تک‌محصول", callback_data="adm_woo_test_prompt"),
@@ -4455,6 +4456,234 @@ async def admin_woo_hub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.effective_message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
 
 
+def get_catalog_categories_list() -> List[Dict[str, Any]]:
+    """استخراج لیست سازمان‌یافته دسته‌بندی‌ها به همراه آیکون و تعداد محصولات"""
+    from search_engine import JSON_PRODUCTS, load_json_products
+    if not JSON_PRODUCTS:
+        load_json_products()
+
+    from collections import defaultdict
+    cat_groups = defaultdict(list)
+    for p in JSON_PRODUCTS:
+        k = str(p.get("category_key") or "").strip().lower()
+        n = str(p.get("category_name") or p.get("category") or "دسته‌بندی نشده").strip()
+        norm_key = k or n
+        cat_groups[norm_key].append(p)
+
+    KNOWN = {
+        "tv": ("📺", "تلویزیون"),
+        "refrigerator": ("❄️", "یخچال فریزر"),
+        "washing_machine": ("🧺", "ماشین لباسشویی"),
+        "dishwasher": ("🍽", "ماشین ظرفشویی"),
+        "conditioner": ("❄️", "کولر گازی"),
+        "small_appliances": ("☕️", "لوازم ریز برقی"),
+        "audio": ("🔊", "سیستم صوتی"),
+        "aeg": ("🔒", "محصولات آاگ (AEG)"),
+        "laptop": ("💻", "لپ‌تاپ")
+    }
+
+    result = []
+    for k, prods in cat_groups.items():
+        icon, name = "📦", k
+        for kn_k, (kn_icon, kn_name) in KNOWN.items():
+            if k == kn_k or kn_k in k or kn_name in k:
+                icon, name = kn_icon, kn_name
+                break
+        else:
+            first_name = prods[0].get("category_name") or prods[0].get("category")
+            if first_name:
+                name = first_name
+        result.append({
+            "key": k,
+            "name": name,
+            "icon": icon,
+            "count": len(prods),
+            "products": prods
+        })
+
+    result.sort(key=lambda x: x["count"], reverse=True)
+    return result
+
+
+def matches_category(product: dict, cat_id: str) -> bool:
+    """بررسی تطابق کالا با دسته‌بندی مشخص‌شده"""
+    if not cat_id or cat_id in ["all", "کل", "همه"]:
+        return True
+    k = str(product.get("category_key") or "").strip().lower()
+    n = str(product.get("category_name") or product.get("category") or "").strip().lower()
+    cat_id_clean = str(cat_id).strip().lower()
+    if cat_id_clean in [k, n]:
+        return True
+    MAP = {
+        "tv": ["tv", "تلویزیون"],
+        "refrigerator": ["refrigerator", "یخچال فریزر", "یخچال"],
+        "washing_machine": ["washing_machine", "ماشین لباسشویی", "لباسشویی"],
+        "dishwasher": ["dishwasher", "ماشین ظرفشویی", "ظرفشویی"],
+        "conditioner": ["conditioner", "کولر گازی", "کولر"],
+        "small_appliances": ["small_appliances", "لوازم ریز برقی", "لوازم ریز"],
+        "audio": ["audio", "سیستم صوتی"],
+        "aeg": ["aeg", "محصولات آاگ/aeg", "محصولات آاگ"],
+        "laptop": ["laptop", "لپ تاپ", "لپ‌تاپ"]
+    }
+    for m_k, aliases in MAP.items():
+        if cat_id_clean == m_k or cat_id_clean in [a.lower() for a in aliases]:
+            if k == m_k or n in [a.lower() for a in aliases]:
+                return True
+    return False
+
+
+def get_category_display_name(cat_key: str) -> str:
+    """دریافت نام و آیکون نمایشی دسته‌بندی"""
+    MAP = {
+        "tv": "📺 تلویزیون",
+        "refrigerator": "❄️ یخچال فریزر",
+        "washing_machine": "🧺 ماشین لباسشویی",
+        "dishwasher": "🍽 ماشین ظرفشویی",
+        "conditioner": "❄️ کولر گازی",
+        "small_appliances": "☕️ لوازم ریز برقی",
+        "audio": "🔊 سیستم صوتی",
+        "aeg": "🔒 محصولات آاگ (AEG)",
+        "laptop": "💻 لپ‌تاپ",
+        "all": "🌐 کل کاتالوگ"
+    }
+    return MAP.get(cat_key.lower().strip(), cat_key)
+
+
+async def admin_woo_cat_select_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """منوی انتخاب دسته‌بندی اختصاصی جهت ارسال به ووکامرس"""
+    query = update.callback_query
+    await query.answer()
+
+    from search_engine import JSON_PRODUCTS, load_json_products
+    if not JSON_PRODUCTS:
+        load_json_products()
+
+    cats = get_catalog_categories_list()
+    total_prods = len(JSON_PRODUCTS)
+
+    msg = (
+        "📂 <b>ارسال و بروزرسانی محصولات به تفکیک دسته‌بندی</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"▫️ کل محصولات کاتالوگ: <b>{total_prods:,} کالا</b> در <b>{len(cats)} دسته‌بندی</b>\n\n"
+        "🎯 <i>دسته‌بندی مورد نظر خود را جهت ارسال، تولید محتوا یا رفع اشکال انتخاب فرمایید:</i>\n"
+        "💡 <i>در این حالت فقط کالاهای همین دسته پردازش شده و نیازی به ارسال مجدد سایر بخش‌های کاتالوگ نخواهد بود.</i>"
+    )
+
+    kb_rows = []
+    row = []
+    for c in cats:
+        btn_text = f"{c['icon']} {c['name']} ({c['count']:,})"
+        row.append(InlineKeyboardButton(btn_text, callback_data=f"adm_woo_cat_prompt|{c['key']}"))
+        if len(row) == 2:
+            kb_rows.append(row)
+            row = []
+    if row:
+        kb_rows.append(row)
+
+    kb_rows.append([
+        InlineKeyboardButton("🚀 ارسال کل کاتالوگ (تمام دسته‌ها)", callback_data="adm_woo_batch_prompt")
+    ])
+    kb_rows.append([
+        InlineKeyboardButton("🔙 بازگشت به ووکامرس", callback_data="adm_woo_hub")
+    ])
+
+    await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(kb_rows), parse_mode="HTML")
+
+
+async def admin_woo_cat_prompt_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, cat_key: str):
+    """پیش‌نمایش و تایید ارسال محصولات یک دسته مشخص"""
+    query = update.callback_query
+    await query.answer()
+
+    from search_engine import JSON_PRODUCTS, load_json_products
+    if not JSON_PRODUCTS:
+        load_json_products()
+
+    from woo_sync_service import get_woo_product_map, is_aeg_protected, get_woo_batch_state
+
+    prods_in_cat = [p for p in JSON_PRODUCTS if matches_category(p, cat_key)]
+    cat_total = len(prods_in_cat)
+    cat_name = get_category_display_name(cat_key)
+
+    if cat_total == 0:
+        await query.edit_message_text(
+            f"⚠️ هیچ کالایی برای دسته '{cat_name}' یافت نشد.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دسته‌ها", callback_data="adm_woo_cat_select")]]),
+            parse_mode="HTML"
+        )
+        return
+
+    product_map = get_woo_product_map()
+    published_count = sum(1 for p in prods_in_cat if str(p.get("product_id") or p.get("id")) in product_map)
+    aeg_count = sum(1 for p in prods_in_cat if is_aeg_protected(p))
+    ready_count = cat_total - aeg_count
+
+    batch_state = get_woo_batch_state()
+    has_active_cat_batch = (
+        batch_state.get("category_filter") == cat_key and
+        0 < batch_state.get("current_index", 0) < cat_total
+    )
+
+    curr_idx = batch_state.get("current_index", 0) if has_active_cat_batch else 0
+    chunk_size = batch_state.get("chunk_size", 50)
+
+    if has_active_cat_batch:
+        remaining = cat_total - curr_idx
+        next_chunk_end = min(curr_idx + chunk_size, cat_total)
+        msg = (
+            f"📂 <b>مدیریت ارسال دسته: {cat_name}</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"⏸ <b>یک پارت‌بندی ناتمام برای این دسته در حافظه وجود دارد:</b>\n"
+            f"▫️ کل کالاهای این دسته: <b>{cat_total:,} کالا</b>\n"
+            f"▫️ آخرین موقعیت: <b>کالای {curr_idx:,} از {cat_total:,}</b>\n"
+            f"▫️ کالاهای باقیمانده: <b>{remaining:,} کالا</b>\n"
+            f"▫️ 🟢 موفق قبلی: <b>{batch_state.get('sent_count', 0):,}</b> | ⚠️ بازبینی: <b>{batch_state.get('review_count', 0):,}</b>\n\n"
+            f"▫️ پارت بعدی: <b>از کالای {curr_idx + 1:,} تا {next_chunk_end:,}</b>\n\n"
+            "👇 <i>اقدام مورد نظر برای این دسته را انتخاب فرمایید:</i>"
+        )
+        kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton(f"▶️ ادامه ارسال دسته {cat_name} ({curr_idx+1} تا {next_chunk_end})", callback_data=f"adm_woo_batch_run|cat_resume|{cat_key}")
+            ],
+            [
+                InlineKeyboardButton("🔄 شروع مجدد این دسته از ابتدا (کالای ۱)", callback_data=f"adm_woo_batch_run|cat_restart|{cat_key}")
+            ],
+            [
+                InlineKeyboardButton("📂 تغییر دسته‌بندی", callback_data="adm_woo_cat_select"),
+                InlineKeyboardButton("🔙 بازگشت به ووکامرس", callback_data="adm_woo_hub")
+            ]
+        ])
+    else:
+        msg = (
+            f"📂 <b>آماده‌سازی ارسال دسته: {cat_name}</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"📊 <b>آمار اختصاصی این دسته‌بندی:</b>\n"
+            f"▫️ کل محصولات این دسته: <b>{cat_total:,} کالا</b>\n"
+            f"▫️ قبلاً در سایت ثبت شده: <b>{published_count:,} کالا</b>\n"
+            f"▫️ 🔒 محافظت‌شده (آاگ): <b>{aeg_count:,} کالا</b> (مستثنی)\n"
+            f"▫️ آماده ارسال / بروزرسانی: <b>{ready_count:,} کالا</b>\n\n"
+            "🛡 <b>سازوکار ارسال هوشمند:</b>\n"
+            f"▫️ هر پارت شامل <b>۵۰ کالا</b> از همین دسته است.\n"
+            f"▫️ تاخیر امن ۱۰ ثانیه‌ای جهت حفاظت از سقف API اعمال می‌شود.\n"
+            "▫️ مشخصات فنی + متن سئو هوش مصنوعی تولید و ذخیره می‌گردد.\n\n"
+            "❓ <i>محصولات این دسته در چه وضعیتی ارسال شوند؟</i>"
+        )
+        kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📥 شروع ۵۰ محصول اول در حالت پیش‌نویس (Draft)", callback_data=f"adm_woo_batch_run|cat_draft|{cat_key}")
+            ],
+            [
+                InlineKeyboardButton("🌐 شروع ۵۰ محصول اول در حالت انتشار (Publish)", callback_data=f"adm_woo_batch_run|cat_publish|{cat_key}")
+            ],
+            [
+                InlineKeyboardButton("📂 تغییر دسته‌بندی", callback_data="adm_woo_cat_select"),
+                InlineKeyboardButton("🔙 بازگشت به ووکامرس", callback_data="adm_woo_hub")
+            ]
+        ])
+
+    await query.edit_message_text(msg, reply_markup=kb, parse_mode="HTML")
+
+
 async def admin_woo_batch_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """پیش‌نمایش امنیتی و مدیریت پارت‌بندی ۵۰ عددی قبل از ارسال به ووکامرس"""
     query = update.callback_query
@@ -4470,6 +4699,8 @@ async def admin_woo_batch_prompt(update: Update, context: ContextTypes.DEFAULT_T
 
     total = len(JSON_PRODUCTS)
     curr_idx = batch_state.get("current_index", 0)
+    cat_filter = batch_state.get("category_filter", "all")
+    cat_label = get_category_display_name(cat_filter)
     has_active_batch = curr_idx > 0 and curr_idx < total
 
     chunk_size = batch_state.get("chunk_size", 50)
@@ -4482,7 +4713,8 @@ async def admin_woo_batch_prompt(update: Update, context: ContextTypes.DEFAULT_T
             "🚀 <b>مدیریت ارسال دسته‌ای محصولات به ووکامرس</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             "⏸ <b>یک عملیات پارت‌بندی در جریان و متوقف شده است:</b>\n"
-            f"▫️ کل محصولات کاتالوگ: <b>{total:,} کالا</b>\n"
+            f"▫️ حوزه پارت‌بندی: <b>{cat_label}</b>\n"
+            f"▫️ کل محصولات این بخش: <b>{total:,} کالا</b>\n"
             f"▫️ آخرین موقعیت: <b>کالای {curr_idx:,} از {total:,}</b>\n"
             f"▫️ کالاهای باقیمانده: <b>{remaining:,} کالا</b>\n"
             f"▫️ 🟢 موفق قبلی: <b>{batch_state.get('sent_count', 0):,}</b> | ⚠️ بازبینی: <b>{batch_state.get('review_count', 0):,}</b>\n\n"
@@ -4498,6 +4730,9 @@ async def admin_woo_batch_prompt(update: Update, context: ContextTypes.DEFAULT_T
             ],
             [
                 InlineKeyboardButton("🔄 شروع مجدد از ابتدا (کالای ۱)", callback_data="adm_woo_batch_run|restart")
+            ],
+            [
+                InlineKeyboardButton("📂 ارسال محصولات یک دسته خاص", callback_data="adm_woo_cat_select")
             ],
             [
                 InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="adm_woo_hub")
@@ -4521,10 +4756,13 @@ async def admin_woo_batch_prompt(update: Update, context: ContextTypes.DEFAULT_T
         )
         kb = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("📥 شروع ۵۰ محصول اول در حالت پیش‌نویس (Draft)", callback_data="adm_woo_batch_run|draft")
+                InlineKeyboardButton("📥 شروع کل کاتالوگ در حالت پیش‌نویس (Draft)", callback_data="adm_woo_batch_run|draft")
             ],
             [
-                InlineKeyboardButton("🌐 شروع ۵۰ محصول اول در حالت انتشار (Publish)", callback_data="adm_woo_batch_run|publish")
+                InlineKeyboardButton("🌐 شروع کل کاتالوگ در حالت انتشار (Publish)", callback_data="adm_woo_batch_run|publish")
+            ],
+            [
+                InlineKeyboardButton("📂 ارسال فقط یک دسته‌بندی خاص", callback_data="adm_woo_cat_select")
             ],
             [
                 InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="adm_woo_hub")
@@ -4535,7 +4773,7 @@ async def admin_woo_batch_prompt(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, action: str):
-    """اجرای عملیات ارسال دسته‌ای ۵۰ عددی با تاخیر ۱۰ ثانیه‌ای و سیستم تایید مرحله‌ای ادمین"""
+    """اجرای عملیات ارسال دسته‌ای ۵۰ عددی با تاخیر ۱۰ ثانیه‌ای و تفکیک دسته‌بندی اختیاری"""
     query = update.callback_query
     await query.answer("در حال بارگذاری و شروع پارت...", show_alert=False)
 
@@ -4550,24 +4788,61 @@ async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFA
     )
 
     batch_state = get_woo_batch_state()
-    total = len(JSON_PRODUCTS)
+
+    # پارس کردن اکشن و فیلتر دسته‌بندی
+    category_filter = "all"
+    action_mode = action
+
+    if action.startswith("cat_"):
+        parts = action.split("|")
+        cat_cmd = parts[0]
+        if len(parts) > 1:
+            category_filter = parts[1]
+        action_mode = cat_cmd.replace("cat_", "")
+    elif action in ["restart", "resume"]:
+        action_mode = action
+        category_filter = batch_state.get("category_filter", "all")
+    else:
+        action_mode = action
+        category_filter = batch_state.get("category_filter", "all")
+
+    # فیلتر کردن کالاهای مربوطه
+    if category_filter and category_filter != "all":
+        products_to_process = [p for p in JSON_PRODUCTS if matches_category(p, category_filter)]
+        cat_display_name = get_category_display_name(category_filter)
+    else:
+        products_to_process = list(JSON_PRODUCTS)
+        cat_display_name = "کل کاتالوگ"
+
+    total = len(products_to_process)
+    if total == 0:
+        await query.edit_message_text(
+            f"⚠️ هیچ کالایی برای دسته '{cat_display_name}' یافت نشد.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به دسته‌ها", callback_data="adm_woo_cat_select")]]),
+            parse_mode="HTML"
+        )
+        return
+
     chunk_size = 50
     delay_sec = 10.0
 
-    if action == "restart":
+    if action_mode == "restart":
         reset_woo_batch_state()
         batch_state = get_woo_batch_state()
         publish_status = "draft"
-    elif action == "resume":
+    elif action_mode == "resume":
         publish_status = batch_state.get("publish_status", "draft")
     else:
-        publish_status = action if action in ["draft", "publish"] else "draft"
-        if not batch_state.get("is_active"):
+        publish_status = action_mode if action_mode in ["draft", "publish"] else "draft"
+        if not batch_state.get("is_active") or batch_state.get("category_filter") != category_filter:
             batch_state["current_index"] = 0
             batch_state["sent_count"] = 0
             batch_state["skipped_aeg"] = 0
             batch_state["review_count"] = 0
             batch_state["errors_count"] = 0
+
+    batch_state["category_filter"] = category_filter
+    batch_state["category_name"] = cat_display_name
 
     start_idx = batch_state.get("current_index", 0)
     if start_idx >= total:
@@ -4593,7 +4868,8 @@ async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFA
 
     status_msg = await query.edit_message_text(
         f"⏳ <b>آغاز پارت {chunk_num} از {total_chunks} ({current_chunk_count} محصول)...</b>\n"
-        f"▫️ محدوده کاتالوگ: از {start_idx + 1:,} تا {end_idx:,}\n"
+        f"▫️ دسته فعال: <b>{cat_display_name}</b>\n"
+        f"▫️ محدوده: از {start_idx + 1:,} تا {end_idx:,} (کل دسته: {total:,})\n"
         f"▫️ تاخیر امنیتی: ۱۰ ثانیه برای هر کالا\n"
         f"▫️ لطفاً صبور باشید...",
         reply_markup=cancel_kb,
@@ -4626,7 +4902,7 @@ async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFA
             save_woo_batch_state(batch_state)
 
             stop_txt = (
-                "🛑 <b>عملیات ارسال دسته‌ای توسط ادمین متوقف شد.</b>\n"
+                f"🛑 <b>عملیات ارسال دسته «{cat_display_name}» متوقف شد.</b>\n"
                 "━━━━━━━━━━━━━━━━━━━━\n"
                 f"▫️ موقعیت ذخیره‌شده: <b>کالای {i:,} از {total:,}</b>\n"
                 f"▫️ ✅ موفق در این پارت: <b>{chunk_sent}</b>\n"
@@ -4636,13 +4912,14 @@ async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFA
                 "💡 موقعیت در دیتابیس ثبت شد. هر زمان بخواهید می‌توانید از همین کالا ادامه دهید."
             )
             res_kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"▶️ ادامه از کالای {i + 1:,}", callback_data="adm_woo_batch_run|resume")],
+                [InlineKeyboardButton(f"▶️ ادامه از کالای {i + 1:,} ({cat_display_name})", callback_data="adm_woo_batch_run|resume")],
+                [InlineKeyboardButton("📂 انتخاب دسته دیگر", callback_data="adm_woo_cat_select")],
                 [InlineKeyboardButton("🔙 بازگشت به ووکامرس", callback_data="adm_woo_hub")]
             ])
             await status_msg.edit_text(stop_txt, reply_markup=res_kb, parse_mode="HTML")
             return
 
-        product = JSON_PRODUCTS[i]
+        product = products_to_process[i]
         curr_num_in_chunk = (i - start_idx) + 1
         global_curr_num = i + 1
         pname = str(product.get("name") or product.get("title") or "کالای بدون عنوان").strip()[:35]
@@ -4656,12 +4933,12 @@ async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFA
 
         # نمایش کارت پیشرفت زنده
         try:
-            overall_pct = int((global_curr_num / total) * 100)
+            overall_pct = int((global_curr_num / total) * 100) if total > 0 else 0
             await status_msg.edit_text(
-                f"⏳ <b>در حال پردازش پارت {chunk_num} از {total_chunks}</b> (وضعیت: {publish_status.upper()})\n"
+                f"⏳ <b>در حال پردازش پارت {chunk_num} از {total_chunks}</b> (دسته: <b>{cat_display_name}</b> | وضعیت: {publish_status.upper()})\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"📦 <b>کالای جاری ({curr_num_in_chunk}/{current_chunk_count}):</b> <code>{pname}</code>\n"
-                f"▫️ پیشرفت کل کاتالوگ: <b>{global_curr_num:,}</b> از <b>{total:,}</b> ({overall_pct}٪)\n"
+                f"▫️ پیشرفت دسته {cat_display_name}: <b>{global_curr_num:,}</b> از <b>{total:,}</b> ({overall_pct}٪)\n"
                 f"▫️ ✅ موفق در این پارت: <b>{chunk_sent}</b>\n"
                 f"▫️ 🔒 محافظت‌شده (AEG): <b>{chunk_skipped_aeg}</b>\n"
                 f"▫️ ⚠️ صف بازبینی: <b>{chunk_review}</b>\n"
@@ -4712,20 +4989,21 @@ async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFA
 
     remaining_after = total - end_idx
 
-    # پایان کل محصولات کاتالوگ
+    # پایان کل محصولات این دسته یا کاتالوگ
     if remaining_after <= 0:
         reset_woo_batch_state()
         final_txt = (
-            "🎉 <b>عملیات ارسال کلیه پارت‌ها با موفقیت ۱۰۰٪ پایان یافت!</b>\n"
+            f"🎉 <b>عملیات ارسال کلیه کالاهای دسته «{cat_display_name}» با موفقیت ۱۰۰٪ پایان یافت!</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            f"▫️ کل محصولات پردازش‌شده: <b>{total:,} کالا</b>\n"
+            f"▫️ کل محصولات پردازش‌شده این دسته: <b>{total:,} کالا</b>\n"
             f"▫️ 🟢 با موفقیت ثبت/بروزرسانی شد: <b>{batch_state.get('sent_count', 0):,} کالا</b>\n"
             f"▫️ 🔒 مستثنی و محافظت‌شده (آاگ): <b>{batch_state.get('skipped_aeg', 0):,} کالا</b>\n"
             f"▫️ ⚠️ در صف بازبینی دستی: <b>{batch_state.get('review_count', 0):,} کالا</b>\n"
             f"▫️ ❌ خطاهای API/شبکه: <b>{batch_state.get('errors_count', 0):,} کالا</b>\n\n"
-            "🌳 تمامی محصولات با مشخصات فنی کامل و نقد و بررسی سئو در شاخه <b>AiKala</b> قرار گرفتند."
+            f"🌳 تمامی محصولات این دسته با مشخصات کامل فنی و سئو در شاخه <b>AiKala</b> قرار گرفتند."
         )
         kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📂 ارسال دسته‌بندی دیگر", callback_data="adm_woo_cat_select")],
             [InlineKeyboardButton("🔙 بازگشت به بخش ووکامرس", callback_data="adm_woo_hub")],
             [InlineKeyboardButton("🏠 پنل اصلی مدیریت", callback_data="adm_back_panel")]
         ])
@@ -4734,17 +5012,17 @@ async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFA
 
     # توقف و نمایش گزارش مرحله‌ای + دکمه‌های ادامه/توقف برای ادمین
     checkpoint_txt = (
-        f"🏁 <b>پارت {chunk_num} از {total_chunks} با موفقیت به پایان رسید!</b>\n"
+        f"🏁 <b>پارت {chunk_num} از {total_chunks} دسته «{cat_display_name}» با موفقیت پایان یافت!</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        f"📊 <b>گزارش عملکرد این ۵۰ محصول:</b>\n"
+        f"📊 <b>گزارش عملکرد این {current_chunk_count} محصول:</b>\n"
         f"▫️ ✅ ارسال موفق و یکدست: <b>{chunk_sent} کالا</b>\n"
         f"▫️ 🔒 محافظت‌شده AEG: <b>{chunk_skipped_aeg} کالا</b>\n"
         f"▫️ ⚠️ هدایت به صف بازبینی: <b>{chunk_review} کالا</b>\n"
         f"▫️ ❌ خطاها: <b>{chunk_errors} کالا</b>\n\n"
-        f"📈 <b>وضعیت کل کاتالوگ تا این لحظه:</b>\n"
+        f"📈 <b>وضعیت دسته «{cat_display_name}» تا این لحظه:</b>\n"
         f"▫️ انجام شده: <b>{end_idx:,} از {total:,} کالا</b> ({int((end_idx/total)*100)}٪)\n"
-        f"▫️ <b>کالاهای باقیمانده برای پارت‌های بعدی:</b> <b>{remaining_after:,} کالا</b>\n\n"
-        "❓ <i>آیا مایلید ۵۰ محصول بعدی (پارت بعدی) فوراً آغاز شود؟</i>"
+        f"▫️ <b>کالاهای باقیمانده این دسته:</b> <b>{remaining_after:,} کالا</b>\n\n"
+        f"❓ <i>آیا مایلید ۵۰ محصول بعدی این دسته فوراً آغاز شود؟</i>"
     )
 
     next_chunk_limit = min(remaining_after, chunk_size)
@@ -4753,6 +5031,7 @@ async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFA
             InlineKeyboardButton(f"▶️ بله، ارسال ۵۰ محصول بعدی ({remaining_after:,} مانده)", callback_data="adm_woo_batch_run|resume")
         ],
         [
+            InlineKeyboardButton("📂 انتخاب دسته‌بندی دیگر", callback_data="adm_woo_cat_select"),
             InlineKeyboardButton("⏸ توقف موقت و ادامه در آینده", callback_data="adm_woo_hub")
         ],
         [

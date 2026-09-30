@@ -199,6 +199,8 @@ from admin_panel import (
     admin_freeze_command,
     admin_unfreeze_command,
     admin_woo_hub_menu,
+    admin_woo_cat_select_handler,
+    admin_woo_cat_prompt_handler,
     admin_woo_batch_prompt,
     admin_woo_batch_run_handler,
     admin_woo_test_prompt,
@@ -2593,6 +2595,19 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             return
         await admin_woo_hub_menu(update, context)
 
+    elif data == "adm_woo_cat_select":
+        if not is_admin(update.effective_user.id):
+            await query.answer("⛔️ این بخش تنها در اختیارات ادمین می‌باشد.", show_alert=True)
+            return
+        await admin_woo_cat_select_handler(update, context)
+
+    elif data.startswith("adm_woo_cat_prompt|"):
+        if not is_admin(update.effective_user.id):
+            await query.answer("⛔️ این بخش تنها در اختیارات ادمین می‌باشد.", show_alert=True)
+            return
+        cat_key = data.split("|", 1)[1]
+        await admin_woo_cat_prompt_handler(update, context, cat_key)
+
     elif data == "adm_woo_batch_prompt":
         if not is_admin(update.effective_user.id):
             await query.answer("⛔️ این بخش تنها در اختیارات ادمین می‌باشد.", show_alert=True)
@@ -2603,8 +2618,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         if not is_admin(update.effective_user.id):
             await query.answer("⛔️ این بخش تنها در اختیارات ادمین می‌باشد.", show_alert=True)
             return
-        pub_status = data.split("|")[1]
-        await admin_woo_batch_run_handler(update, context, pub_status)
+        action_payload = data.split("|", 1)[1]
+        await admin_woo_batch_run_handler(update, context, action_payload)
 
     elif data == "adm_woo_batch_cancel":
         if not is_admin(update.effective_user.id):
