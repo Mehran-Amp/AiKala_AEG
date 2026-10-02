@@ -210,7 +210,13 @@ from admin_panel import (
     admin_woo_review_action_handler,
     admin_woo_settings_menu,
     admin_woo_toggle_status_handler,
-    admin_woo_toggle_auto_handler
+    admin_woo_toggle_auto_handler,
+    admin_add_product_category_select,
+    admin_add_product_category_selected,
+    handle_admin_manual_prod_title_input,
+    handle_admin_manual_prod_price_input,
+    admin_manual_products_list_handler,
+    admin_delete_manual_product_handler
 )
 from freeze_service import is_bot_frozen, get_freeze_message
 from order_tracking import (
@@ -536,6 +542,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if adm and context.user_data.get("awaiting_product_image_link"):
         await handle_admin_photo_link_input(update, context)
+        return
+
+    if adm and context.user_data.get("awaiting_manual_prod_title"):
+        await handle_admin_manual_prod_title_input(update, context)
+        return
+
+    if adm and context.user_data.get("awaiting_manual_prod_price"):
+        await handle_admin_manual_prod_price_input(update, context)
         return
 
     if adm and context.user_data.get("awaiting_admin_product_price"):
@@ -2091,6 +2105,9 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await admin_orders_hub(update, context, "all")
 
     elif data.startswith("adm_ok|"):
+        if not is_admin(update.effective_user.id):
+            await query.answer("دسترسی غیرمجاز", show_alert=True)
+            return
         await query.answer("فیش تایید شد")
         code = data.split("|")[1]
         order = await db.get_order_by_code(code)
@@ -2174,6 +2191,9 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             )
 
     elif data.startswith("adm_no|"):
+        if not is_admin(update.effective_user.id):
+            await query.answer("دسترسی غیرمجاز", show_alert=True)
+            return
         await query.answer("فیش رد شد")
         code = data.split("|")[1]
         await db.update_order_status(code, status="Rejected", admin_note="عدم تایید مشخصات فیش یا مبلغ بیعانه توسط حسابداری")
@@ -2383,6 +2403,43 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 
     elif data == "adm_sync_catalog_stock":
         await admin_sync_catalog_stock(update, context)
+
+    # ─── ماژول افزودن محصول دستی و مدیریت محصولات دستی ───
+    elif data == "adm_add_product_start":
+        if not is_admin(update.effective_user.id):
+            await query.answer("دسترسی غیرمجاز", show_alert=True)
+            return
+        await admin_add_product_category_select(update, context)
+
+    elif data.startswith("adm_add_prod_cat|"):
+        if not is_admin(update.effective_user.id):
+            await query.answer("دسترسی غیرمجاز", show_alert=True)
+            return
+        cat_name = data.split("|")[1]
+        await admin_add_product_category_selected(update, context, cat_name)
+
+    elif data == "adm_cancel_manual_add":
+        if not is_admin(update.effective_user.id):
+            await query.answer("دسترسی غیرمجاز", show_alert=True)
+            return
+        context.user_data.pop("awaiting_manual_prod_title", None)
+        context.user_data.pop("awaiting_manual_prod_price", None)
+        await query.answer("عملیات لغو گردید.")
+        await admin_panel_command(update, context)
+
+    elif data.startswith("adm_manual_prods|") or data == "adm_manual_prods":
+        if not is_admin(update.effective_user.id):
+            await query.answer("دسترسی غیرمجاز", show_alert=True)
+            return
+        page_val = int(data.split("|")[1]) if "|" in data else 0
+        await admin_manual_products_list_handler(update, context, page=page_val)
+
+    elif data.startswith("adm_del_manual|"):
+        if not is_admin(update.effective_user.id):
+            await query.answer("دسترسی غیرمجاز", show_alert=True)
+            return
+        target_pid = data.split("|")[1]
+        await admin_delete_manual_product_handler(update, context, target_pid)
 
     elif data.startswith("adm_hidden_prods|") or data == "adm_hidden_prods":
         if not is_admin(update.effective_user.id):
@@ -2970,7 +3027,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             f"🆔 <b>شناسه کاربر:</b> <code>{user.id}</code>\n\n"
             f"👇 <i>جهت ارسال تصاویر این کالا، دکمه زیر را لمس کرده و لینک پست، شماره پیام یا عکس‌های کانال را بفرستید:</i>"
         )
-        for adm_id in ADMIN_IDS:
+        for adm_id in get_all_admin_ids():
             try:
                 await context.bot.send_message(
                     chat_id=adm_id,

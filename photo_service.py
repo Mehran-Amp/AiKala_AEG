@@ -573,56 +573,23 @@ async def scrape_telegram_embed_photos(channel_name: str, msg_id: int) -> List[s
 
 async def probe_telegram_channel_album_and_caption(channel_name: str, base_mid: int) -> Tuple[List[str], List[int], str]:
     """
-    پویش جامع استخراج آلبوم کامل و متن کپشن از کانال عمومی تلگرام:
-    ۱. استخراج تصاویر گروپ‌شده (MediaGroup) و کپشن از پیام اصلی
-    ۲. در صورت تک‌تصویر بودن، پویش پیام‌های متوالی مجاور (عقب و جلو)
+    استخراج تصاویر آلبوم و متن کپشن از پیام مشخص‌شده در کانال عمومی تلگرام:
+    استخراج تصاویر گروپ‌شده (MediaGroup) و کپشن موجود در خود پیام.
+    جهت جلوگیری قطعی از تداخل عکس‌های کالاهای مجاور (مانند ارسال عکس یخچال به جای لباسشویی)،
+    فقط تصاویر اختصاصی همین پست استخراج می‌شوند.
     """
-    logger.info(f"🔍 [PROBE] Scraping channel {channel_name} around message {base_mid} via Telegram Public Embed...")
+    ch_clean = str(channel_name).replace("@", "").strip()
+    logger.info(f"🔍 [PROBE] Scraping channel {ch_clean} message {base_mid} via Telegram Public Embed...")
     discovered_photos: List[str] = []
     discovered_mids: List[int] = [base_mid]
-    main_caption: str = ""
     
-    # ۱. استخراج عکس‌ها و کپشن موجود در خود پست
-    main_photos, main_caption = await scrape_telegram_embed_photos_and_caption(channel_name, base_mid)
+    # استخراج مستقیم عکس‌ها و کپشن موجود در خود پست از طریق Telegram Embed
+    main_photos, main_caption = await scrape_telegram_embed_photos_and_caption(ch_clean, base_mid)
     for p in main_photos:
         if p not in discovered_photos:
             discovered_photos.append(p)
             
-    logger.info(f"🔍 [PROBE] Main post {base_mid} returned {len(main_photos)} direct photos and caption len={len(main_caption)}")
-    
-    # ۲. اگر در پیام مبنا فقط ۱ عکس یا کمتر یافت شد، پیام‌های قبل و بعد را پویش می‌کنیم
-    if len(discovered_photos) <= 1:
-        # الف) پویش عقب‌گرد (base_mid - 1 تا base_mid - 10)
-        for prev_id in range(base_mid - 1, max(1, base_mid - 10), -1):
-            p_photos, p_cap = await scrape_telegram_embed_photos_and_caption(channel_name, prev_id)
-            if p_photos:
-                logger.info(f"   ➕ [PROBE] Discovered {len(p_photos)} photo(s) at previous msg {prev_id}")
-                for p in p_photos:
-                    if p not in discovered_photos:
-                        discovered_photos.insert(0, p)
-                if prev_id not in discovered_mids:
-                    discovered_mids.insert(0, prev_id)
-                if not main_caption and p_cap:
-                    main_caption = p_cap
-            else:
-                break
-                
-        # ب) پویش پیش‌رو (base_mid + 1 تا base_mid + 10)
-        for next_id in range(base_mid + 1, base_mid + 10):
-            n_photos, n_cap = await scrape_telegram_embed_photos_and_caption(channel_name, next_id)
-            if n_photos:
-                logger.info(f"   ➕ [PROBE] Discovered {len(n_photos)} photo(s) at next msg {next_id}")
-                for p in n_photos:
-                    if p not in discovered_photos:
-                        discovered_photos.append(p)
-                if next_id not in discovered_mids:
-                    discovered_mids.append(next_id)
-                if not main_caption and n_cap:
-                    main_caption = n_cap
-            else:
-                break
-
-    logger.info(f"🔍 [PROBE RESULT] Found total {len(discovered_photos)} photos and {len(discovered_mids)} msg IDs for {channel_name}/{base_mid}")
+    logger.info(f"🔍 [PROBE RESULT] Found {len(discovered_photos)} photo(s) and caption len={len(main_caption)} for {ch_clean}/{base_mid}")
     return discovered_photos, discovered_mids, main_caption
 
 async def probe_telegram_channel_album(channel_name: str, base_mid: int) -> Tuple[List[str], List[int]]:
@@ -709,18 +676,6 @@ async def send_verified_photos_to_user(
     channel = photo_data.get("channel", PHOTOS_CHANNEL)
     msg_ids = sorted(list(set(photo_data.get("message_ids", []))))
     file_ids = photo_data.get("file_ids", [])
-
-    # غنی‌سازی هوشمند در صورت تک‌عکس بودن با استخراج وب اگر کانال معتبر موجود است
-    if len(file_ids) <= 1 and channel and msg_ids:
-        ch_clean = str(channel).replace("@", "").strip()
-        if not ch_clean.startswith("-"):
-            logger.info(f"🔍 [DELIVERY DEBUG] Attempting to enrich single photo from public embed for {channel}/{msg_ids[0]}...")
-            scraped, _ = await probe_telegram_channel_album(ch_clean, msg_ids[0])
-            if scraped and len(scraped) > len(file_ids):
-                logger.info(f"🎉 [DELIVERY DEBUG] Enriched from {len(file_ids)} to {len(scraped)} photos!")
-                file_ids = scraped
-                photo_data["file_ids"] = scraped
-                save_verified_photos()
 
     logger.info(f"📤 [DELIVERY DEBUG] Initiating photo delivery for {pid} to chat {chat_id}: "
                 f"file_ids={len(file_ids)}, msg_ids={len(msg_ids)}, channel={channel}")
@@ -1042,7 +997,8 @@ async def send_product_card_and_photos(chat_id: int, product: dict, context: Con
 
     # اگر عکس ارسال شده باشد یا کالا لپ‌تاپ باشد، دکمه «تصاویر محصول» نمایش داده نمی‌شود
     show_photo_btn = (not photos_sent) and (not is_laptop)
-    is_admin = (chat_id in ADMIN_IDS) if ADMIN_IDS else False
+    from keyboards import is_admin as check_is_admin
+    is_admin = check_is_admin(chat_id)
 
     msg = build_boxed_product_message(product)
     kb = product_inline_keyboard(pid, context, show_photo_button=show_photo_btn, is_admin=is_admin)

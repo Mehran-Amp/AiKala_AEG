@@ -48,7 +48,7 @@ ADMIN_IDS = getattr(config, "ADMIN_IDS", [int(x) for x in os.getenv("ADMIN_IDS",
 
 from database import Database
 from search_engine import JSON_PRODUCTS, _normalize_digits
-from keyboards import resolve_safe_cb, main_menu_keyboard, is_admin
+from keyboards import resolve_safe_cb, main_menu_keyboard, is_admin, get_all_admin_ids
 from invoice_service import generate_invoice_png, build_invoice_data_from_order, to_fa_digits
 
 logger = logging.getLogger(__name__)
@@ -837,7 +837,7 @@ async def finalize_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
     admin_shipping_text = "📮 پست پیشتاز (تسویه کامل - بدون بیعانه)" if is_post else f"🚚 باربری (بیعانه {dep_pct}٪ + مانده در محل)"
     admin_fin_text = f"💰 <b>مبلغ کل (تسویه ۱۰۰٪):</b> <code>{f_total_price} تومان</code>" if is_post else f"💰 <b>مبلغ کل:</b> <code>{f_total_price} تومان</code>\n💳 <b>بیعانه ({dep_pct}٪):</b> <code>{f_deposit} تومان</code>"
 
-    for adm_id in ADMIN_IDS:
+    for adm_id in get_all_admin_ids():
         try:
             admin_note = ""
             if not card_number:
@@ -978,7 +978,7 @@ async def handle_receipt_photo(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception:
         f_amt = f"{amt_paid} تومان"
 
-    for adm_id in ADMIN_IDS:
+    for adm_id in get_all_admin_ids():
         try:
             adm_kb = InlineKeyboardMarkup([
                 [

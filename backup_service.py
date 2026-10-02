@@ -143,12 +143,22 @@ def create_full_backup_zip(prefix: str = "AiKala_Backup") -> Tuple[str, Dict[str
         except Exception:
             pass
 
+    manual_products_count = 0
+    if os.path.exists("manual_products.json"):
+        try:
+            with open("manual_products.json", "r", encoding="utf-8") as f:
+                man_data = json.load(f)
+                manual_products_count = len(man_data) if isinstance(man_data, list) else len(man_data.keys())
+        except Exception:
+            pass
+
     manifest = {
         "backup_name": zip_filename,
         "created_at": readable_date,
         "version": "3.2.0",
         "orders_count": db_summary.get("orders", 0),
         "products_catalog_count": catalog_count,
+        "manual_products_count": manual_products_count,
         "audio_catalog_count": 0,
         "aeg_products_count": 0,
         "verified_photos_count": verified_photos_count,
@@ -203,6 +213,7 @@ def create_full_backup_zip(prefix: str = "AiKala_Backup") -> Tuple[str, Dict[str
         (active_db, "database/bot_data.db"),
         # ۲. کاتالوگ‌ها و درخت دسته‌بندی‌ها
         ("catalog_products.json", "catalogs/catalog_products.json"),
+        ("manual_products.json", "catalogs/manual_products.json"),
         ("momtazkalla_all_products.json", "catalogs/momtazkalla_all_products.json"),
         ("audio_catalog.json", "catalogs/audio_catalog.json"),
         ("aeg_products.json", "catalogs/aeg_products.json"),
@@ -358,6 +369,7 @@ def restore_full_replace(zip_file_bytes_or_path) -> Tuple[bool, str]:
         # جدول مپ فایل‌های پروژه و برچسب فارسی آنها
         FILE_DESTINATIONS = {
             "catalog_products.json": ("catalog_products.json", "کاتالوگ جامع محصولات و مشخصات فنی"),
+            "manual_products.json": ("manual_products.json", "فهرست محصولات ثبت‌شده دستی توسط ادمین"),
             "momtazkalla_all_products.json": ("momtazkalla_all_products.json", "کاتالوگ پایه محصولات ممتازکالا"),
             "audio_catalog.json": ("audio_catalog.json", "کاتالوگ سیستم‌های صوتی و پارتی‌باکس"),
             "aeg_products.json": ("aeg_products.json", "کاتالوگ محصولات تخصصی آاگ (AEG)"),
@@ -420,6 +432,7 @@ def restore_smart_merge(zip_file_bytes_or_path) -> Tuple[bool, str, Dict[str, in
         "photos_added": 0,
         "channel_photos_added": 0,
         "products_enriched": 0,
+        "manual_products_added": 0,
         "audio_added": 0,
         "aeg_added": 0,
         "channels_added": 0,
@@ -838,6 +851,34 @@ def restore_smart_merge(zip_file_bytes_or_path) -> Tuple[bool, str, Dict[str, in
             except Exception as e:
                 logger.warning(f"Error merging woo_review_queue: {e}")
 
+        # ۱۲. ادغام محصولات ثبت‌شده دستی توسط ادمین (manual_products.json)
+        man_member = next((n for n in namelist if os.path.basename(n) == "manual_products.json"), None)
+        if man_member:
+            try:
+                b_manual = json.loads(zf.read(man_member).decode("utf-8"))
+                curr_manual = []
+                if os.path.exists("manual_products.json"):
+                    with open("manual_products.json", "r", encoding="utf-8") as f:
+                        curr_manual = json.load(f)
+                if not isinstance(curr_manual, list):
+                    curr_manual = []
+                man_map = {str(it.get("product_id") or it.get("id")): it for it in curr_manual if isinstance(it, dict)}
+                man_added = 0
+                if isinstance(b_manual, list):
+                    for it in b_manual:
+                        if isinstance(it, dict):
+                            pid = str(it.get("product_id") or it.get("id"))
+                            if pid and pid not in man_map:
+                                curr_manual.append(it)
+                                man_map[pid] = it
+                                man_added += 1
+                if man_added > 0:
+                    with open("manual_products.json", "w", encoding="utf-8") as f:
+                        json.dump(curr_manual, f, ensure_ascii=False, indent=2)
+                    stats["manual_products_added"] = man_added
+            except Exception as e:
+                logger.warning(f"Error merging manual_products: {e}")
+
         zf.close()
         _reload_in_memory_services()
 
@@ -848,6 +889,7 @@ def restore_smart_merge(zip_file_bytes_or_path) -> Tuple[bool, str, Dict[str, in
             f"▫️ ادمین‌های فرعی افزوده شده: <b>{stats['admins_added']}</b> نفر\n"
             f"▫️ تصاویر اختصاصی متصل‌شده: <b>{stats['photos_added']}</b> کالا\n"
             f"▫️ مشخصات و کالاهای تکمیل‌شده: <b>{stats['products_enriched']}</b> قلم\n"
+            f"▫️ محصولات دستی افزوده شده: <b>{stats['manual_products_added']}</b> کالا\n"
             f"▫️ سیستم‌های صوتی افزوده شده: <b>{stats['audio_added']}</b> دستگاه\n"
             f"▫️ محصولات آاگ افزوده شده: <b>{stats['aeg_added']}</b> کالا\n"
             f"▫️ محتواهای هوش مصنوعی ادغام‌شده: <b>{stats.get('ai_content_merged', 0)}</b> کالا\n"

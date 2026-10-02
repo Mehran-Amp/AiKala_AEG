@@ -165,6 +165,13 @@ async def admin_panel_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception:
         hidden_count = 0
 
+    manual_count = 0
+    try:
+        man_list = get_manual_products()
+        manual_count = len(man_list) if man_list else 0
+    except Exception:
+        manual_count = 0
+
     # اطلاعات موتور هوش مصنوعی
     ai_provider_label = "Gemini"
     api_key_status = "⚠️ کلید ثبت‌نشده"
@@ -206,6 +213,7 @@ async def admin_panel_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"<blockquote>📊 <b>وضعیت کاتالوگ و فروشگاه (Live Badges):</b>\n"
         f"{freeze_status_line}"
         f"▫️ کل کالاهای کاتالوگ: <b>{total_prods:,} کالا</b>\n"
+        f"▫️ محصولات ثبت‌شده دستی: <b>{manual_count:,} کالا</b>\n"
         f"▫️ کالاهای فاقد مشخصات هوش مصنوعی: <b>{no_specs_count:,} کالا</b>\n"
         f"▫️ کالاهای فاقد نقد و بررسی هوش مصنوعی: <b>{no_desc_count:,} کالا</b>\n"
         f"▫️ کالاهای نیازمند بارگذاری تصویر: <b>{unphoto_count:,} کالا</b>\n"
@@ -225,6 +233,12 @@ async def admin_panel_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
     buttons = [
+        # بخش اختصاصی: افزودن محصول دستی و مدیریت محصولات دستی
+        [
+            InlineKeyboardButton("➕ افزودن محصول دستی", callback_data="adm_add_product_start"),
+            InlineKeyboardButton(f"📦 محصولات دستی ({manual_count})", callback_data="adm_manual_prods|0") if manual_count > 0 else InlineKeyboardButton("📦 محصولات دستی", callback_data="adm_manual_prods|0")
+        ],
+
         # دسته ۱: کاتالوگ‌ها و محصولات
         [
             InlineKeyboardButton(f"💻 کاتالوگ لپتاپ{badge_laptop}", callback_data="adm_laptop_hub"),
@@ -2118,11 +2132,7 @@ async def handle_admin_photo_link_input(update: Update, context: ContextTypes.DE
                             prev_orig_date = get_msg_orig_date(prev_fwd)
                             prev_mg_id = getattr(prev_fwd, 'media_group_id', None)
 
-                            is_album_match = False
-                            if base_mg_id and prev_mg_id and base_mg_id == prev_mg_id:
-                                is_album_match = True
-                            elif prev_fwd.photo and prev_orig_date and base_orig_date and abs((prev_orig_date - base_orig_date).total_seconds()) <= 4:
-                                is_album_match = True
+                            is_album_match = bool(base_mg_id and prev_mg_id and base_mg_id == prev_mg_id)
 
                             if prev_fwd.photo and is_album_match:
                                 logger.info(f"   ➕ Discovered album photo at previous msg_id {prev_id}")
@@ -2148,11 +2158,7 @@ async def handle_admin_photo_link_input(update: Update, context: ContextTypes.DE
                             next_orig_date = get_msg_orig_date(next_fwd)
                             next_mg_id = getattr(next_fwd, 'media_group_id', None)
 
-                            is_album_match = False
-                            if base_mg_id and next_mg_id and base_mg_id == next_mg_id:
-                                is_album_match = True
-                            elif next_fwd.photo and next_orig_date and base_orig_date and abs((next_orig_date - base_orig_date).total_seconds()) <= 4:
-                                is_album_match = True
+                            is_album_match = bool(base_mg_id and next_mg_id and base_mg_id == next_mg_id)
 
                             if next_fwd.photo and is_album_match:
                                 logger.info(f"   ➕ Discovered album photo at next msg_id {next_id}")
@@ -5343,6 +5349,458 @@ async def admin_woo_toggle_auto_handler(update: Update, context: ContextTypes.DE
     status_label = "فعال" if settings["auto_sync_enabled"] else "غیرفعال"
     await query.answer(f"همگام‌سازی خودکار {status_label} شد.", show_alert=True)
     await admin_woo_settings_menu(update, context)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ۸. ماژول افزودن دستی محصول توسط ادمین و انتشار خودکار در سایت و ربات
+# ─────────────────────────────────────────────────────────────────────────────
+
+MANUAL_PRODUCTS_FILE = "manual_products.json"
+
+def get_manual_products() -> List[dict]:
+    """دریافت لیست محصولات دستی ثبت‌شده توسط ادمین"""
+    if os.path.exists(MANUAL_PRODUCTS_FILE):
+        try:
+            with open(MANUAL_PRODUCTS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    return data
+                elif isinstance(data, dict):
+                    return list(data.values())
+        except Exception:
+            return []
+    return []
+
+def save_manual_product_entry(product: dict) -> bool:
+    """ذخیره یا بروزرسانی یک محصول دستی"""
+    pid = str(product.get("product_id") or product.get("id") or "").strip()
+    if not pid:
+        return False
+    prods = get_manual_products()
+    prods = [p for p in prods if str(p.get("product_id") or p.get("id")) != pid]
+    prods.insert(0, product)
+    try:
+        atomic_save_json(MANUAL_PRODUCTS_FILE, prods, indent=2)
+        return True
+    except Exception:
+        return False
+
+def delete_manual_product_entry(pid: str) -> bool:
+    """حذف محصول دستی از لیست"""
+    s_pid = str(pid).strip()
+    prods = get_manual_products()
+    filtered = [p for p in prods if str(p.get("product_id") or p.get("id")) != s_pid]
+    try:
+        atomic_save_json(MANUAL_PRODUCTS_FILE, filtered, indent=2)
+        return True
+    except Exception:
+        return False
+
+STANDARD_PRODUCT_CATEGORIES = [
+    ("📺 تلویزیون", "تلویزیون", "tv"),
+    ("🧺 لباسشویی", "لباسشویی", "washing_machine"),
+    ("🍽 ظرفشویی", "ظرفشویی", "dishwasher"),
+    ("❄️ یخچال و فریزر", "یخچال", "refrigerator"),
+    ("💨 کولر گازی", "کولر گازی", "air_conditioner"),
+    ("🧹 جاروبرقی", "جاروبرقی", "vacuum"),
+    ("♨️ مایکروویو و فر", "مایکروویو", "microwave"),
+    ("🔊 سیستم صوتی و اسپیکر", "سیستم صوتی", "audio"),
+    ("☕️ نوشیدنی‌ساز و پخت‌وپز", "لوازم پخت و پز", "kitchen_appliances"),
+    ("🔌 سایر لوازم خانگی", "سایر لوازم خانگی", "appliances")
+]
+
+async def admin_add_product_category_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """مرحله ۱: انتخاب دسته‌بندی کالا برای افزودن دستی محصول"""
+    query = update.callback_query
+    if query:
+        await query.answer()
+
+    # پاکسازی استیت‌های قبلی احتمالی
+    context.user_data.pop("awaiting_manual_prod_title", None)
+    context.user_data.pop("awaiting_manual_prod_price", None)
+
+    buttons = []
+    row = []
+    for icon_name, cat_title, cat_key in STANDARD_PRODUCT_CATEGORIES:
+        row.append(InlineKeyboardButton(icon_name, callback_data=f"adm_add_prod_cat|{cat_title}"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    buttons.append([
+        InlineKeyboardButton("❌ انصراف و بازگشت به پنل", callback_data="adm_cancel_manual_add")
+    ])
+
+    kb = InlineKeyboardMarkup(buttons)
+    text = (
+        "➕ <b>افزودن محصول جدید به کاتالوگ فروشگاه و سایت:</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "▫️ <b>مرحله اول:</b> لطفاً <b>دسته‌بندی اصلی</b> کالا را انتخاب فرمایید:\n\n"
+        "💡 <i>ربات به صورت خودکار مشخصات فنی، نقد و بررسی ۳۵۰ کلمه‌ای، کلمات کلیدی سئو، دسته‌بندی زیرشاخه و برچسب‌های ووکامرس را تولید کرده و محصول را در ربات و سایت aegkala.com منتشر می‌کند.</i>"
+    )
+
+    if query:
+        try:
+            await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await query.message.reply_text(text, reply_markup=kb, parse_mode="HTML")
+    elif update.message:
+        await update.message.reply_text(text, reply_markup=kb, parse_mode="HTML")
+
+
+async def admin_add_product_category_selected(update: Update, context: ContextTypes.DEFAULT_TYPE, category: str):
+    """مرحله ۲: دریافت نام کامل کالا پس از انتخاب دسته‌بندی"""
+    query = update.callback_query
+    if query:
+        await query.answer()
+
+    context.user_data["awaiting_manual_prod_title"] = {
+        "category": category
+    }
+
+    cancel_kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="adm_cancel_manual_add")]
+    ])
+
+    text = (
+        f"➕ <b>افزودن محصول جدید — دسته‌بندی: {category}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"▫️ <b>مرحله دوم:</b> لطفاً <b>نام کامل و تجاری محصول</b> را ارسال فرمایید:\n\n"
+        f"📌 <i>نکته مهم: برای استخراج حداکثر مشخصات دقیق، حتماً نام برند، مدل، رنگ یا ظرفیت را ذکر کنید.</i>\n\n"
+        f"💡 <b>نمونه‌های معتبر:</b>\n"
+        f"▫️ <code>لباسشویی ۱۰.۵ کیلویی ال جی مدل V5 سیلور</code>\n"
+        f"▫️ <code>تلویزیون ۶۵ اینچ سونی مدل 65X90L فورکی اسمارت</code>\n"
+        f"▫️ <code>یخچال ساید بای ساید بوش مدل KAD90VB20 مشکی</code>\n"
+        f"▫️ <code>ظرفشویی ۱۴ نفره سامسونگ مدل 5050 سفید</code>\n\n"
+        f"❌ جهت انصراف: /cancel یا لمس دکمه زیر:"
+    )
+
+    if query:
+        try:
+            await query.edit_message_text(text, reply_markup=cancel_kb, parse_mode="HTML")
+        except Exception:
+            await query.message.reply_text(text, reply_markup=cancel_kb, parse_mode="HTML")
+    elif update.message:
+        await update.message.reply_text(text, reply_markup=cancel_kb, parse_mode="HTML")
+
+
+async def handle_admin_manual_prod_title_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پردازش نام محصول ارسالی توسط ادمین و درخواست قیمت"""
+    state = context.user_data.get("awaiting_manual_prod_title")
+    if not state:
+        return
+
+    text = (update.message.text or "").strip()
+    if text.startswith("/cancel") or text.lower() in ["cancel", "لغو", "انصراف", "/انصراف"]:
+        context.user_data.pop("awaiting_manual_prod_title", None)
+        await update.message.reply_text("❌ فرآیند افزودن محصول لغو گردید.")
+        return
+
+    if len(text) < 3:
+        await update.message.reply_text("⚠️ نام محصول کوتاه است. لطفاً نام کامل کالا شامل برند و مدل را وارد فرمایید:")
+        return
+
+    category = state.get("category", "سایر لوازم خانگی")
+    context.user_data.pop("awaiting_manual_prod_title", None)
+    context.user_data["awaiting_manual_prod_price"] = {
+        "category": category,
+        "title": text
+    }
+
+    cancel_kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="adm_cancel_manual_add")]
+    ])
+
+    prompt = (
+        f"➕ <b>افزودن محصول جدید — مرحله پایانی:</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 <b>نام محصول:</b> {text}\n"
+        f"📂 <b>دسته‌بندی:</b> {category}\n\n"
+        f"💰 <b>مرحله سوم:</b> لطفاً <b>قیمت مصرف‌کننده کالا (به تومان)</b> را وارد فرمایید:\n"
+        f"▫️ <i>مثال: <code>54000000</code> برای ۵۴ میلیون تومان</i>\n"
+        f"▫️ <i>برای حالت «استعلام تلفنی / تماس بگیرید»، عدد <code>0</code> را ارسال فرمایید.</i>\n\n"
+        f"❌ جهت انصراف: /cancel"
+    )
+    await update.message.reply_text(prompt, reply_markup=cancel_kb, parse_mode="HTML")
+
+
+async def handle_admin_manual_prod_price_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پردازش قیمت، تولید هوشمند مشخصات و محتوا، ثبت در کاتالوگ و انتشار در ووکامرس"""
+    state = context.user_data.pop("awaiting_manual_prod_price", None)
+    if not state:
+        return
+
+    raw_text = (update.message.text or "").strip()
+    if raw_text.startswith("/cancel") or raw_text.lower() in ["cancel", "لغو", "انصراف", "/انصراف"]:
+        await update.message.reply_text("❌ فرآیند افزودن محصول لغو گردید.")
+        return
+
+    from search_engine import _normalize_digits, detect_product_brand
+    clean_num = _normalize_digits(raw_text).replace(",", "").replace(" ", "").replace("تومان", "").strip()
+    if not clean_num.isdigit():
+        context.user_data["awaiting_manual_prod_price"] = state
+        await update.message.reply_text("⚠️ لطفاً مبلغ معتبر به صورت عدد به تومان وارد فرمایید (یا 0 برای تماس بگیرید):")
+        return
+
+    price_num = int(clean_num)
+    title = state.get("title", "")
+    category = state.get("category", "سایر لوازم خانگی")
+
+    # یافتن category_key متناظر
+    cat_key = "appliances"
+    for _, c_title, c_k in STANDARD_PRODUCT_CATEGORIES:
+        if c_title == category:
+            cat_key = c_k
+            break
+
+    # تولید شناسه یکتا برای کالا
+    pid = f"M_{int(time.time())}"
+    brand = detect_product_brand(title, fallback_brand="اورجینال شرکتی")
+
+    wait_msg = await update.message.reply_text(
+        f"⏳ <b>در حال تولید هوشمند مشخصات و محتوای سئو و انتشار محصول...</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 <b>نام کالا:</b> {title}\n"
+        f"🏷 <b>برند تشخیص داده‌شده:</b> {brand}\n"
+        f"📂 <b>دسته:</b> {category}\n"
+        f"💰 <b>قیمت:</b> {price_num:,} تومان\n\n"
+        f"▫️ ۱. استخراج مشخصات فنی ۲۰+ گانه با هوش مصنوعی (Google Gemini / DeepSeek)...\n"
+        f"▫️ ۲. تولید نقد و بررسی تخصصی ۳۵۰ کلمه‌ای و برچسب‌های سئو...\n"
+        f"▫️ ۳. ایجاد دسته‌بندی زیرشاخه در دسته اصلی AiKala...\n"
+        f"▫️ ۴. ثبت در کاتالوگ و پایگاه‌داده ربات و ارسال به وبسایت aegkala.com...\n\n"
+        f"<i>لطفاً چند لحظه شکیبا باشید...</i>",
+        parse_mode="HTML"
+    )
+
+    prod_data = {
+        "product_id": pid,
+        "id": pid,
+        "name": title,
+        "title": title,
+        "brand": brand,
+        "category": category,
+        "category_name": category,
+        "category_key": cat_key,
+        "price": price_num,
+        "price_raw": price_num,
+        "price_formatted": f"{price_num:,} تومان" if price_num > 0 else "تماس بگیرید",
+        "status": "b" if price_num > 0 else "o",
+        "specs": {},
+        "ai_specs": {},
+        "ai_generated_description": "",
+        "is_manual": True,
+        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    # ذخیره در کاتالوگ محلی
+    cat_products = {}
+    if os.path.exists("catalog_products.json"):
+        try:
+            with open("catalog_products.json", "r", encoding="utf-8") as f:
+                cat_products = json.load(f)
+        except Exception:
+            cat_products = {}
+    cat_products[pid] = prod_data
+    try:
+        atomic_save_json("catalog_products.json", cat_products, indent=2)
+    except Exception as e_save_cat:
+        logger.warning(f"Error saving catalog_products: {e_save_cat}")
+
+    # ذخیره در پایگاه داده SQLite ربات
+    try:
+        from database import Database
+        db_obj = Database()
+        await db_obj.execute(
+            """INSERT OR REPLACE INTO products (product_id, name, brand, category, price, status, is_available)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (pid, title, brand, category, price_num, "b" if price_num > 0 else "o", 1 if price_num > 0 else 0)
+        )
+    except Exception as e_db:
+        logger.warning(f"Error saving manual product in SQLite: {e_db}")
+
+    # ذخیره در manual_products.json
+    save_manual_product_entry(prod_data)
+
+    # بارگذاری مجدد کش جستجوی ربات در حافظه RAM
+    try:
+        from search_engine import load_json_products
+        load_json_products()
+    except Exception as e_reload:
+        logger.warning(f"Error reloading search engine: {e_reload}")
+
+    # ارسال و تولید هوشمند مشخصات و انتشار در ووکامرس
+    woo_res_text = "در انتظار اتصال"
+    woo_permalink = ""
+    woo_id = None
+    try:
+        from woo_sync_service import publish_single_product_to_woo
+        ok_woo, woo_res_msg, extra_info = await asyncio.to_thread(
+            publish_single_product_to_woo,
+            product=prod_data,
+            publish_status="publish",
+            force_enrich=True
+        )
+        if ok_woo and isinstance(extra_info, dict):
+            woo_id = extra_info.get("woo_id")
+            woo_permalink = extra_info.get("permalink", "")
+            prod_data["wp_id"] = woo_id
+            prod_data["woo_permalink"] = woo_permalink
+            save_manual_product_entry(prod_data)
+            woo_res_text = f"🟢 منتشر شد در سایت (شناسه: #{woo_id})"
+        else:
+            woo_res_text = f"⚠️ {woo_res_msg}"
+    except Exception as e_woo:
+        logger.error(f"Error publishing manual product to WooCommerce: {e_woo}")
+        woo_res_text = f"❌ خطای ارسال به سایت: {e_woo}"
+
+    try:
+        await wait_msg.delete()
+    except Exception:
+        pass
+
+    success_text = (
+        f"🎉 <b>محصول با موفقیت اضافه و منتشر گردید!</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 <b>نام محصول:</b> {title}\n"
+        f"🏷 <b>کد محصول (PID):</b> <code>{pid}</code>\n"
+        f"📂 <b>دسته‌بندی:</b> {category}\n"
+        f"🏷 <b>برند:</b> {brand}\n"
+        f"💰 <b>قیمت:</b> {price_num:,} تومان\n\n"
+        f"▫️ 🤖 <b>محتوا و مشخصات فنی:</b> جدول ویژگی‌های کامل و نقد و بررسی سئو با هوش مصنوعی تولید و ذخیره شد.\n"
+        f"▫️ 🔍 <b>موتور جستجوی ربات:</b> هم‌اکنون این کالا در جستجو، کاتالوگ و کارت مشخصات ربات فعال و قابل دسترس است.\n"
+        f"▫️ 🌐 <b>سایت ووکامرس:</b> {woo_res_text}\n"
+    )
+
+    # نمایش کارت محصول با دکمه‌های کامل مدیریت
+    from keyboards import product_inline_keyboard
+    kb = product_inline_keyboard(pid, context, show_photo_button=True, is_admin=True, view_as_customer=False)
+    await update.message.reply_text(success_text, reply_markup=kb, parse_mode="HTML")
+
+
+async def admin_manual_products_list_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
+    """مدیریت و نمایش فهرست محصولات دستی ثبت‌شده توسط ادمین"""
+    query = update.callback_query
+    if query:
+        await query.answer()
+
+    manual_prods = get_manual_products()
+    total = len(manual_prods)
+
+    if total == 0:
+        empty_text = (
+            "📦 <b>محصولات دستی ارسال شده:</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "▫️ هنوز هیچ محصولی به صورت دستی ثبت نشده است.\n\n"
+            "💡 با دکمه «➕ افزودن محصول دستی» می‌توانید کالاهای اختصاصی جدید خود را همراه با مشخصات هوش مصنوعی به ربات و سایت اضافه فرمایید."
+        )
+        empty_kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ افزودن محصول جدید", callback_data="adm_add_product_start")],
+            [InlineKeyboardButton("🔙 بازگشت به پنل مدیریت", callback_data="adm_back_panel")]
+        ])
+        if query:
+            await query.edit_message_text(empty_text, reply_markup=empty_kb, parse_mode="HTML")
+        else:
+            await update.message.reply_text(empty_text, reply_markup=empty_kb, parse_mode="HTML")
+        return
+
+    per_page = 5
+    max_page = (total - 1) // per_page
+    page = max(0, min(page, max_page))
+    start_idx = page * per_page
+    page_items = manual_prods[start_idx:start_idx + per_page]
+
+    text_lines = [
+        f"📦 <b>فهرست محصولات دستی ثبت‌شده (صفحه {page + 1} از {max_page + 1}):</b>",
+        f"📊 مجموع کالاهای دستی: <b>{total} کالا</b>\n",
+        "━━━━━━━━━━━━━━━━━━━━"
+    ]
+
+    buttons = []
+    for idx, p in enumerate(page_items, start_idx + 1):
+        pid = str(p.get("product_id") or p.get("id") or "")
+        pname = p.get("name") or p.get("title") or pid
+        price_val = p.get("price", 0)
+        price_str = f"{int(price_val):,} تومان" if price_val else "تماس بگیرید"
+        cat = p.get("category", "لوازم خانگی")
+        wp_id = p.get("wp_id")
+        woo_badge = f"🌐 سایت #{wp_id}" if wp_id else "▫️ محلی"
+
+        text_lines.append(
+            f"<b>{idx}. {pname}</b>\n"
+            f"▫️ کد: <code>{pid}</code> | دسته: <i>{cat}</i>\n"
+            f"▫️ قیمت: <b>{price_str}</b> | {woo_badge}\n"
+        )
+
+        buttons.append([
+            InlineKeyboardButton(f"👁 مشاهده کارت «{pname[:22]}...»", callback_data=f"show_prod|{pid}"),
+            InlineKeyboardButton("🗑 حذف", callback_data=f"adm_del_manual|{pid}")
+        ])
+
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("⬅️ صفحه قبل", callback_data=f"adm_manual_prods|{page - 1}"))
+    if page < max_page:
+        nav_row.append(InlineKeyboardButton("صفحه بعد ➡️", callback_data=f"adm_manual_prods|{page + 1}"))
+    if nav_row:
+        buttons.append(nav_row)
+
+    buttons.append([
+        InlineKeyboardButton("➕ افزودن محصول جدید", callback_data="adm_add_product_start"),
+        InlineKeyboardButton("🔙 بازگشت به پنل مدیریت", callback_data="adm_back_panel")
+    ])
+
+    kb = InlineKeyboardMarkup(buttons)
+    full_text = "\n".join(text_lines)
+
+    if query:
+        try:
+            await query.edit_message_text(full_text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await query.message.reply_text(full_text, reply_markup=kb, parse_mode="HTML")
+    else:
+        await update.message.reply_text(full_text, reply_markup=kb, parse_mode="HTML")
+
+
+async def admin_delete_manual_product_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, pid: str):
+    """حذف محصول دستی از لیست محصولات دستی، کاتالوگ و دیتابیس"""
+    query = update.callback_query
+    s_pid = str(pid).strip()
+
+    # ۱. حذف از manual_products.json
+    delete_manual_product_entry(s_pid)
+
+    # ۲. حذف از catalog_products.json
+    if os.path.exists("catalog_products.json"):
+        try:
+            with open("catalog_products.json", "r", encoding="utf-8") as f:
+                cat = json.load(f)
+            if isinstance(cat, dict) and s_pid in cat:
+                del cat[s_pid]
+                with open("catalog_products.json", "w", encoding="utf-8") as f_out:
+                    json.dump(cat, f_out, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    # ۳. حذف از دیتابیس SQLite
+    try:
+        from database import Database
+        db_obj = Database()
+        await db_obj.execute("DELETE FROM products WHERE product_id = ?", (s_pid,))
+    except Exception:
+        pass
+
+    # ۴. بارگذاری مجدد موتور جستجو
+    try:
+        from search_engine import load_json_products
+        load_json_products()
+    except Exception:
+        pass
+
+    if query:
+        await query.answer("✅ محصول با موفقیت حذف گردید.", show_alert=True)
+        await admin_manual_products_list_handler(update, context, page=0)
 
 
 

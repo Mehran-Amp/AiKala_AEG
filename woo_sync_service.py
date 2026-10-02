@@ -274,24 +274,31 @@ def extract_product_model_key(product: dict) -> str:
 def find_existing_woo_product(product: dict, pid: str) -> Tuple[Optional[int], str]:
     """
     موتور چندلایه کشف کالای موجود در ووکامرس (Multi-tier Anti-Duplicate Engine):
-    لایه ۱: بررسی بر اساس شناسه محصول در نگاشت محلی (product_map)
+    لایه ۱: بررسی بر اساس شناسه محصول در نگاشت محلی (product_map) به صورت رشته و عدد
     لایه ۲: بررسی بر اساس پارت‌نامبر و مدل نرمال‌شده در نگاشت محلی (model_map)
-    لایه ۳: استعلام زنده از ووکامرس با SKU یکتا (AIKALA-{pid})
+    لایه ۳: استعلام زنده از ووکامرس با SKU یکتا (AIKALA-{pid} و {pid})
     لایه ۴: استعلام زنده بر اساس کد مدل و تطابق عنوان و اسلاگ در سایت
+    لایه ۵: جستجوی زنده با نام کالا
     خروجی: (woo_id, match_source)
     """
+    s_pid = str(pid).strip()
     product_map = get_woo_product_map()
     if not isinstance(product_map, dict):
         product_map = {}
     model_map = get_woo_model_map()
     if not isinstance(model_map, dict):
         model_map = {}
-    model_key = extract_product_model_key(product)
+    model_key = extract_product_model_key(product) if product else ""
 
-    # لایه ۱: نگاشت مستقیم PID
-    if pid in product_map and product_map[pid]:
+    # لایه ۱: نگاشت مستقیم PID (رشته و عدد)
+    if s_pid in product_map and product_map[s_pid]:
         try:
-            return int(product_map[pid]), "local_pid_map"
+            return int(product_map[s_pid]), "local_pid_map"
+        except (ValueError, TypeError):
+            pass
+    if s_pid.isdigit() and int(s_pid) in product_map and product_map[int(s_pid)]:
+        try:
+            return int(product_map[int(s_pid)]), "local_pid_map"
         except (ValueError, TypeError):
             pass
 
@@ -299,45 +306,65 @@ def find_existing_woo_product(product: dict, pid: str) -> Tuple[Optional[int], s
     if model_key and model_key in model_map and model_map[model_key]:
         try:
             woo_id = int(model_map[model_key])
-            product_map[pid] = woo_id
+            product_map[s_pid] = woo_id
             save_woo_product_map(product_map)
             return woo_id, "local_model_map"
         except (ValueError, TypeError):
             pass
 
-    # لایه ۳: استعلام زنده با SKU در ووکامرس
-    sku = f"AIKALA-{pid}"
-    try:
-        ok, res = _make_woo_request(f"products?sku={urllib.parse.quote(sku)}", "GET")
-        if ok and isinstance(res, list) and len(res) > 0 and "id" in res[0]:
-            woo_id = int(res[0]["id"])
-            product_map[pid] = woo_id
-            if model_key:
-                model_map[model_key] = woo_id
-                save_woo_model_map(model_map)
-            save_woo_product_map(product_map)
-            return woo_id, "remote_sku_match"
-    except Exception as e:
-        logger.debug(f"Error checking SKU {sku}: {e}")
+    # لایه ۳: استعلام زنده با SKU در ووکامرس (AIKALA-{pid} و {pid})
+    for sku_cand in [f"AIKALA-{s_pid}", s_pid, f"aikala-{s_pid}"]:
+        try:
+            ok, res = _make_woo_request(f"products?sku={urllib.parse.quote(sku_cand)}", "GET")
+            if ok and isinstance(res, list) and len(res) > 0 and "id" in res[0]:
+                woo_id = int(res[0]["id"])
+                product_map[s_pid] = woo_id
+                if model_key:
+                    model_map[model_key] = woo_id
+                    save_woo_model_map(model_map)
+                save_woo_product_map(product_map)
+                return woo_id, "remote_sku_match"
+        except Exception as e:
+            logger.debug(f"Error checking SKU {sku_cand}: {e}")
 
     # لایه ۴: جستجوی زنده بر اساس پارت‌نامبر در ووکامرس
     if model_key and len(model_key) >= 3:
         try:
             ok_s, res_s = _make_woo_request(f"products?search={urllib.parse.quote(model_key)}&per_page=5", "GET")
             if ok_s and isinstance(res_s, list) and len(res_s) > 0:
-                pbrand = str(product.get("brand") or "").lower()
+                pbrand = str(product.get("brand") or "").lower() if product else ""
                 for cand in res_s:
                     c_title = cand.get("name", "").lower()
                     c_slug = cand.get("slug", "").lower()
                     if (model_key in c_title or model_key in c_slug) and (not pbrand or pbrand in c_title or pbrand in c_slug):
                         woo_id = int(cand["id"])
-                        product_map[pid] = woo_id
+                        product_map[s_pid] = woo_id
                         model_map[model_key] = woo_id
                         save_woo_product_map(product_map)
                         save_woo_model_map(model_map)
                         return woo_id, "remote_model_search"
         except Exception as e:
             logger.debug(f"Error searching model {model_key}: {e}")
+
+    # لایه ۵: جستجوی زنده با نام و مدل کالا
+    if product:
+        pname = str(product.get("name") or product.get("title") or "").strip()
+        if pname and len(pname) >= 4:
+            try:
+                ok_n, res_n = _make_woo_request(f"products?search={urllib.parse.quote(pname[:40])}&per_page=5", "GET")
+                if ok_n and isinstance(res_n, list) and len(res_n) > 0:
+                    for cand in res_n:
+                        c_title = str(cand.get("name", "")).lower()
+                        if model_key and model_key in c_title:
+                            woo_id = int(cand["id"])
+                            product_map[s_pid] = woo_id
+                            if model_key:
+                                model_map[model_key] = woo_id
+                                save_woo_model_map(model_map)
+                            save_woo_product_map(product_map)
+                            return woo_id, "remote_name_search"
+            except Exception as e_n:
+                logger.debug(f"Error searching name {pname}: {e_n}")
 
     return None, "not_found"
 
@@ -1966,8 +1993,21 @@ def sync_single_product_price_to_woo(pid: str, new_price: int, product: Optional
             try:
                 with open("catalog_products.json", "r", encoding="utf-8") as f:
                     cat = json.load(f)
-                    if isinstance(cat, dict) and s_pid in cat:
-                        product = cat[s_pid]
+                    if isinstance(cat, dict):
+                        product = cat.get(s_pid) or cat.get(int(s_pid) if s_pid.isdigit() else s_pid)
+            except Exception:
+                pass
+        if not product:
+            try:
+                import sqlite3
+                conn = sqlite3.connect(os.getenv("DB_PATH", "bot_data.db"), timeout=3)
+                conn.row_factory = sqlite3.Row
+                c = conn.cursor()
+                c.execute("SELECT * FROM products WHERE product_id = ?", (s_pid,))
+                r = c.fetchone()
+                conn.close()
+                if r:
+                    product = dict(r)
             except Exception:
                 pass
 
@@ -1987,6 +2027,8 @@ def sync_single_product_price_to_woo(pid: str, new_price: int, product: Optional
 
     payload = {
         "regular_price": reg_price,
+        "sale_price": "",
+        "price": reg_price,
         "stock_status": stock_status
     }
 
@@ -2117,7 +2159,7 @@ async def woo_price_sync_background_task(bot_instance=None):
 
                 if bot_instance and updated > 0:
                     try:
-                        from config import ADMIN_IDS
+                        from keyboards import get_all_admin_ids
                         admin_msg = (
                             f"⏰ <b>بروزرسانی خودکار قیمت‌های سایت ووکامرس:</b>\n"
                             f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -2126,7 +2168,7 @@ async def woo_price_sync_background_task(bot_instance=None):
                             f"⚠️ بدون تغییر / عدم تطبیق: <b>{failed:,}</b>\n"
                             f"📅 زمان اجرا: <b>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</b>"
                         )
-                        for aid in (ADMIN_IDS or []):
+                        for aid in get_all_admin_ids():
                             try:
                                 await bot_instance.send_message(chat_id=aid, text=admin_msg, parse_mode="HTML")
                             except Exception:
