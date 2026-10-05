@@ -5639,7 +5639,7 @@ async def handle_admin_manual_prod_price_input(update: Update, context: ContextT
         ok_woo, woo_res_msg, extra_info = await asyncio.to_thread(
             publish_single_product_to_woo,
             product=prod_data,
-            publish_status="publish",
+            status="publish",
             force_enrich=True
         )
         if ok_woo and isinstance(extra_info, dict):

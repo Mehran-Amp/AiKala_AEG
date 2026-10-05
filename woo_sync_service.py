@@ -1698,7 +1698,13 @@ def validate_product_content(product: dict, specs: Dict[str, str], overview_text
 # ۶. ارسال و بروزرسانی تک‌محصول به ووکامرس
 # ─────────────────────────────────────────────────────────────────────────────
 
-def publish_single_product_to_woo(product: dict, status: Optional[str] = None) -> Tuple[bool, str, Optional[dict]]:
+def publish_single_product_to_woo(
+    product: dict,
+    status: Optional[str] = None,
+    publish_status: Optional[str] = None,
+    force_enrich: bool = False,
+    **kwargs
+) -> Tuple[bool, str, Optional[dict]]:
     """
     ارسال یا بروزرسانی یک محصول مشخص در ووکامرس
     """
@@ -1712,7 +1718,8 @@ def publish_single_product_to_woo(product: dict, status: Optional[str] = None) -
     price = int(product.get("price") or 0)
     
     settings = get_woo_settings()
-    publish_status = status or settings.get("default_publish_status", "draft")
+    eff_status = publish_status or status or settings.get("default_publish_status", "draft")
+    publish_status = eff_status
 
     model_key = extract_product_model_key(product)
 
