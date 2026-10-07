@@ -4422,8 +4422,8 @@ async def admin_woo_hub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "━━━━━━━━━━━━━━━━━━━━\n"
         "📊 <b>داشبورد آماری و وضعیت امنیتی:</b>\n"
         f"▫️ کل کالاهای کاتالوگ ربات: <b>{stats['total_catalog']:,} کالا</b>\n"
-        f"▫️ 🔒 <b>محافظت‌شده (آاگ / AEG):</b> <code>{stats['aeg_protected_count']:,} کالا</code> (مستثنی و امن)\n"
-        f"▫️ 🌳 منتشر شده در شاخه <b>AiKala:</b> <code>{stats['published_count']:,} کالا</code>\n"
+        f"▫️ 🌳 منتشر شده در سایت: <code>{stats['published_count']:,} کالا</code>\n"
+        f"▫️ ⏳ <b>کالاهای ارسال‌نشده تا الان:</b> <code>{stats.get('unsent_count', 0):,} کالا</code>\n"
         f"▫️ 📦 آماده ارسال به سایت: <b>{stats['ready_to_send_count']:,} کالا</b>\n"
         f"▫️ ⚠️ در صف بازبینی دستی: <b>{stats['review_count']} کالا</b>\n\n"
         "⚙️ <b>تنظیمات فنی و هوش مصنوعی:</b>\n"
@@ -4441,11 +4441,12 @@ async def admin_woo_hub_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
             InlineKeyboardButton("📂 ارسال یک دسته‌بندی خاص", callback_data="adm_woo_cat_select")
         ],
         [
-            InlineKeyboardButton("🧪 تست و ارسال تک‌محصول", callback_data="adm_woo_test_prompt"),
+            InlineKeyboardButton(f"📤 ارسال نشده‌ها ({stats.get('unsent_count', 0):,} کالا)", callback_data="adm_woo_unsent_prompt"),
             InlineKeyboardButton("⚡️ بروزرسانی آنی قیمت‌ها", callback_data="adm_woo_price_sync")
         ],
         [
-            InlineKeyboardButton(f"🤖 تغییر موتور هوش مصنوعی سایت ({next_ai_label})", callback_data="adm_woo_toggle_ai_provider|hub")
+            InlineKeyboardButton("🧪 تست و ارسال تک‌محصول", callback_data="adm_woo_test_prompt"),
+            InlineKeyboardButton(f"🤖 موتور هوش مصنوعی ({next_ai_label})", callback_data="adm_woo_toggle_ai_provider|hub")
         ],
         [
             InlineKeyboardButton(f"📋 صف بازبینی و تایید دستی ({stats['review_count']} ⚠️)", callback_data="adm_woo_review_queue"),
@@ -4550,6 +4551,7 @@ def get_category_display_name(cat_key: str) -> str:
         "audio": "🔊 سیستم صوتی",
         "aeg": "🔒 محصولات آاگ (AEG)",
         "laptop": "💻 لپ‌تاپ",
+        "unsent": "📤 کالاهای ارسال‌نشده",
         "all": "🌐 کل کاتالوگ"
     }
     return MAP.get(cat_key.lower().strip(), cat_key)
@@ -4778,6 +4780,68 @@ async def admin_woo_batch_prompt(update: Update, context: ContextTypes.DEFAULT_T
     await query.edit_message_text(msg, reply_markup=kb, parse_mode="HTML")
 
 
+async def admin_woo_unsent_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """پیش‌نمایش و تایید ارسال کالاهایی که تا الان به ووکامرس ارسال نشده‌اند (ارسال‌نشده‌ها)"""
+    query = update.callback_query
+    if query:
+        await query.answer()
+
+    from woo_sync_service import get_woo_sync_stats, get_unsent_woo_products
+    stats = get_woo_sync_stats()
+    unsent_prods = get_unsent_woo_products()
+    unsent_count = len(unsent_prods)
+
+    if unsent_count == 0:
+        msg = (
+            "🎉 <b>تمامی محصولات به ووکامرس ارسال شده‌اند!</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"▫️ کل کالاهای کاتالوگ ربات: <b>{stats['total_catalog']:,} کالا</b>\n"
+            f"▫️ کالاهای ثبت‌شده در سایت: <b>{stats['published_count']:,} کالا</b>\n"
+            "▫️ <b>کالاهای ارسال‌نشده: ۰ کالا ✅</b>\n\n"
+            "💡 هیچ کالای ارسال‌نشده‌ای در کاتالوگ وجود ندارد. تمامی محصولات قبلاً به وب‌سایت متصل شده‌اند.\n"
+            "جهت هماهنگ‌سازی آخرین قیمت‌ها می‌توانید از دکمه «⚡️ بروزرسانی آنی قیمت‌ها» استفاده فرمایید."
+        )
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⚡️ بروزرسانی آنی قیمت‌های سایت", callback_data="adm_woo_price_sync")],
+            [InlineKeyboardButton("🔙 بازگشت به سامانه ووکامرس", callback_data="adm_woo_hub")]
+        ])
+        if query and query.message:
+            await query.edit_message_text(msg, reply_markup=kb, parse_mode="HTML")
+        else:
+            await update.effective_message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
+        return
+
+    msg = (
+        "📤 <b>ارسال کالاهایی که تا الان به سایت ارسال نشده‌اند (ارسال‌نشده‌ها)</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "📊 <b>وضعیت تفکیک کاتالوگ و سایت aegkala.com:</b>\n"
+        f"▫️ کل کالاهای کاتالوگ ربات: <b>{stats['total_catalog']:,} کالا</b>\n"
+        f"▫️ کالاهای قبلاً ثبت‌شده در سایت: <b>{stats['published_count']:,} کالا</b>\n"
+        f"▫️ ⏳ <b>کالاهای ارسال‌نشده تا الان:</b> <b>{unsent_count:,} کالا</b>\n\n"
+        "🛡 <b>ویژگی‌ها و سازوکار هوشمند ارسال:</b>\n"
+        "▫️ فقط و فقط کالاهای جدیدی ارسال می‌شوند که تا این لحظه به سایت منتقل نشده‌اند (کالاهای قبلی دست‌نخورده می‌مانند).\n"
+        "▫️ مشخصات فنی و نقد و بررسی سئو برای تک‌تک کالاها با هوش مصنوعی تولید می‌شود.\n"
+        "▫️ ارسال در پارت‌های ۵۰ عددی با ۱۰ ثانیه تاخیر هوشمند جهت محافظت در برابر محدودیت‌های API.\n\n"
+        "❓ <i>کالاهای ارسال‌نشده در چه وضعیتی به ووکامرس ارسال شوند؟</i>"
+    )
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(f"🌐 ارسال همه ارسال‌نشده‌ها در حالت انتشار ({unsent_count:,})", callback_data="adm_woo_batch_run|unsent_publish")
+        ],
+        [
+            InlineKeyboardButton(f"📥 ارسال همه ارسال‌نشده‌ها در حالت پیش‌نویس ({unsent_count:,})", callback_data="adm_woo_batch_run|unsent_draft")
+        ],
+        [
+            InlineKeyboardButton("🔙 انصراف و بازگشت", callback_data="adm_woo_hub")
+        ]
+    ])
+
+    if query and query.message:
+        await query.edit_message_text(msg, reply_markup=kb, parse_mode="HTML")
+    else:
+        await update.effective_message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
+
+
 async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, action: str):
     """اجرای عملیات ارسال دسته‌ای ۵۰ عددی با تاخیر ۱۰ ثانیه‌ای و تفکیک دسته‌بندی اختیاری"""
     query = update.callback_query
@@ -4799,7 +4863,10 @@ async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFA
     category_filter = "all"
     action_mode = action
 
-    if action.startswith("cat_"):
+    if action in ["unsent_publish", "unsent_draft"]:
+        category_filter = "unsent"
+        action_mode = "publish" if "publish" in action else "draft"
+    elif action.startswith("cat_"):
         parts = action.split("|")
         cat_cmd = parts[0]
         if len(parts) > 1:
@@ -4813,7 +4880,11 @@ async def admin_woo_batch_run_handler(update: Update, context: ContextTypes.DEFA
         category_filter = batch_state.get("category_filter", "all")
 
     # فیلتر کردن کالاهای مربوطه
-    if category_filter and category_filter != "all":
+    if category_filter == "unsent":
+        from woo_sync_service import get_unsent_woo_products
+        products_to_process = get_unsent_woo_products()
+        cat_display_name = "کالاهای ارسال‌نشده به سایت"
+    elif category_filter and category_filter != "all":
         products_to_process = [p for p in JSON_PRODUCTS if matches_category(p, category_filter)]
         cat_display_name = get_category_display_name(category_filter)
     else:
@@ -5103,19 +5174,9 @@ async def handle_admin_woo_test_input(update: Update, context: ContextTypes.DEFA
         await update.message.reply_text("❌ کالایی با این کد یا نام در کاتالوگ یافت نشد.", reply_markup=kb)
         return True
 
-    from woo_sync_service import is_aeg_protected, publish_single_product_to_woo
+    from woo_sync_service import publish_single_product_to_woo
 
-    if is_aeg_protected(matched):
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت به ووکامرس", callback_data="adm_woo_hub")]])
-        await update.message.reply_text(
-            "🔒 <b>این محصول متعلق به برند آاگ (AEG) است!</b>\n"
-            "طبق قانون حفاظت، محصولات AEG هرگز توسط ربات ارسال یا دستکاری نمی‌شوند.",
-            reply_markup=kb,
-            parse_mode="HTML"
-        )
-        return True
-
-    wait_msg = await update.message.reply_text("⏳ در حال استخراج مشخصات و ارسال به ووکامرس...")
+    wait_msg = await update.message.reply_text("⏳ در حال استخراج مشخصات و تولید محتوا و ارسال به ووکامرس...")
 
     ok, res_txt, data = await asyncio.to_thread(publish_single_product_to_woo, matched, "publish")
 

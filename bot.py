@@ -202,6 +202,7 @@ from admin_panel import (
     admin_woo_cat_select_handler,
     admin_woo_cat_prompt_handler,
     admin_woo_batch_prompt,
+    admin_woo_unsent_prompt,
     admin_woo_batch_run_handler,
     admin_woo_test_prompt,
     handle_admin_woo_test_input,
@@ -2670,6 +2671,12 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             await query.answer("⛔️ این بخش تنها در اختیارات ادمین می‌باشد.", show_alert=True)
             return
         await admin_woo_batch_prompt(update, context)
+
+    elif data == "adm_woo_unsent_prompt":
+        if not is_admin(update.effective_user.id):
+            await query.answer("⛔️ این بخش تنها در اختیارات ادمین می‌باشد.", show_alert=True)
+            return
+        await admin_woo_unsent_prompt(update, context)
 
     elif data.startswith("adm_woo_batch_run|"):
         if not is_admin(update.effective_user.id):

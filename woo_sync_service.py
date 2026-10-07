@@ -485,34 +485,33 @@ def log_content_source(pid: str, sources: List[str], validated: bool, notes: str
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ۱. لایه امنیتی و قرنطینه آاگ (AEG Protection Rule)
+# ۱. مدیریت اختصاصی و پشتیبانی برند اصلی آاگ (AEG Premium Engine)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def is_aeg_protected(product: dict) -> bool:
     """
-    بررسی سخت‌گیرانه آیا کالا متعلق به آاگ (AEG) است یا خیر.
-    قانون طلایی: اگر True باشد، ربات حق هیچ‌گونه ارسال، ویرایش یا تغییر در ووکامرس را ندارد.
+    برند اصلی و تخصصی فروشگاه (AEG)
+    طبق دستور جدید: محدودیت قرنطینه برداشته شده و امکان ورود دستی، بروزرسانی و بازتولید محتوای دوبرابری فعال است.
+    جهت سازگاری کدهای پیشین همواره False برمی‌گرداند تا هیچ مانعی در ارسال و ویرایش وجود نداشته باشد.
     """
+    return False
+
+def is_aeg_product(product: dict) -> bool:
+    """تشخیص دقیق تعلق کالا به برند آاگ (AEG) جهت اعمال استاندارد تولید محتوای دوبرابری و مشخصات فوق‌تخصصی"""
     pid = str(product.get("product_id") or product.get("id") or "").strip().upper()
+    brand = str(product.get("brand") or "").strip().lower()
+    name = str(product.get("name") or product.get("title") or "").strip().lower()
+    cat = str(product.get("category") or product.get("category_name") or "").strip().lower()
+    subcat = str(product.get("subcategory") or "").strip().lower()
+    
     if pid.startswith("AEG_") or pid.startswith("AEG"):
         return True
-
-    brand = str(product.get("brand") or "").strip().lower()
-    if "آاگ" in brand or "aeg" in brand or "میله" in brand or "miele" in brand:
+    if "آاگ" in brand or "aeg" in brand:
         return True
-
-    cat_name = str(product.get("category") or product.get("category_name") or "").strip().lower()
-    if "آاگ" in cat_name or "aeg" in cat_name:
+    if "آاگ" in name or "aeg" in name:
         return True
-
-    subcat = str(product.get("subcategory") or "").strip().lower()
-    if "آاگ" in subcat or "aeg" in subcat:
+    if "آاگ" in cat or "aeg" in cat or "آاگ" in subcat or "aeg" in subcat:
         return True
-
-    name = str(product.get("name") or product.get("title") or "").strip().lower()
-    if name.startswith("aeg ") or name.startswith("آاگ ") or "برند آاگ" in name:
-        return True
-
     return False
 
 
@@ -995,7 +994,7 @@ def sanitize_complete_sentences(text: str) -> str:
 
 def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
     """
-    تولید متن نقد و بررسی تخصصی ۳۵۰ الی ۵۰۰ کلمه‌ای با Gemini / DeepSeek
+    تولید متن نقد و بررسی تخصصی (برای محصولات عادی ۳۵۰ الی ۵۰۰ کلمه و برای محصولات آاگ دو برابر: ۷۰۰ الی ۱۲۰۰ کلمه)
     شامل هدینگ‌های H3 و تکرار طبیعی نام و مدل کالا برای رتبه‌گیری در گوگل
     همراه با بازیابی آنی از کش دائمی محتوا جهت صفر کردن مصرف توکن
     """
@@ -1003,21 +1002,56 @@ def generate_woo_ai_description(product: dict, specs: Dict[str, str]) -> str:
     model_key = extract_product_model_key(product)
     pname = str(product.get("name") or product.get("title", "")).strip()
     brand = str(product.get("brand", "")).strip()
-    specs_str = ", ".join([f"{k}: {v}" for k, v in specs.items() if v and str(v).lower() != "نامشخص"][:15])
+    specs_str = ", ".join([f"{k}: {v}" for k, v in specs.items() if v and str(v).lower() != "نامشخص"][:20])
+
+    is_aeg = is_aeg_product(product)
 
     # ۱. بررسی کش دائمی محتوای هوش مصنوعی
-    try:
-        from ai_content_cache import get_cached_ai_content
-        cached = get_cached_ai_content(pid, model_key)
-        if cached and cached.get("ai_overview") and len(cached["ai_overview"]) >= 40:
-            return sanitize_complete_sentences(cached["ai_overview"])
-    except Exception:
-        pass
+    if not is_aeg:
+        try:
+            from ai_content_cache import get_cached_ai_content
+            cached = get_cached_ai_content(pid, model_key)
+            if cached and cached.get("ai_overview") and len(cached["ai_overview"]) >= 40:
+                return sanitize_complete_sentences(cached["ai_overview"])
+        except Exception:
+            pass
 
-    if product.get("ai_generated_description") and len(product["ai_generated_description"]) >= 40:
-        return sanitize_complete_sentences(product["ai_generated_description"])
+        if product.get("ai_generated_description") and len(product["ai_generated_description"]) >= 40:
+            return sanitize_complete_sentences(product["ai_generated_description"])
+    else:
+        # برای محصولات آاگ اگر محتوای موجود طولانی و عمیق (>1000 کاراکتر) باشد استفاده شود، وگرنه مجدد تولید ۲ برابری صورت می‌گیرد
+        try:
+            from ai_content_cache import get_cached_ai_content
+            cached = get_cached_ai_content(pid, model_key)
+            if cached and cached.get("ai_overview") and len(cached["ai_overview"]) >= 1000:
+                return sanitize_complete_sentences(cached["ai_overview"])
+        except Exception:
+            pass
 
-    prompt = f"""شما نویسنده و متخصص ارشد سئو (SEO Content Specialist) و کارشناس نقد و بررسی لوازم خانگی و دیجیتال هستید.
+    if is_aeg:
+        prompt = f"""شما پژوهشگر ارشد، کارشناس رسمی مهندسی لوازم خانگی و متخصص سئو محتوایی برند معتبر و پریمیوم آاگ (AEG German Engineering) هستید.
+آاگ برند اصلی، پرچمدار و محور مرکزی فروشگاه ماست و بسیار حیاتی است که جامع‌ترین، دقیق‌ترین، مستندترین و طولانی‌ترین نقد و بررسی فوق‌تخصصی (۲ برابر محتواهای متداول - حداقل ۷۰۰ تا ۱۲۰۰ کلمه) را برای این کالا به زبان فارسی تولید فرمایید:
+
+نام دقیق و تجاری محصول: {pname}
+برند: AEG (آاگ آلمان / اروپا)
+مشخصات فنی و استانداردهای تایید شده:
+{specs_str if specs_str else 'استاندارد مهندسی آاگ اروپا'}
+
+دستورالعمل جامع، ساختار و الزامات نگارشی سئو:
+۱. ساختار متن باید بسیار غنی، استاندارد و در ۶ بخش مجزا با تیترهای جذاب (H3) تدوین گردد:
+   - بخش اول: <h3>اصالت مهندسی آلمان و فلسفه طراحی پریمیوم {pname}</h3> (بررسی تاریخچه مهندسی AEG، متریال ضدزنگ و ارگونومی فوق‌پیشرفته).
+   - بخش دوم: <h3>موتور اکواینورتر و تکنولوژی‌های اختصاصی پیشرفته آاگ</h3> (توضیح عملکرد دقیق تکنولوژی‌های اختصاصی آاگ نظیر ProSteam® بخارشور ضدچروک، ÖKOMix® ترکیب پیشرفته شوینده، ProSense® سنسور هوشمند وزن و زمان، SoftWater®، ComfortLift® یا اینورتر بی‌صدا متناسب با نوع این دستگاه).
+   - بخش سوم: <h3>برنامه‌های کاربردی، سنسورهای هوشمند و کاربری روزمره</h3> (شرح برنامه‌های شستشو/پخت/سرمایش، شبیه‌سازی تجربه استفاده واقعی در خانه و رابط کاربری لمسی).
+   - بخش چهارم: <h3>راندمان فوق بهینه انرژی و استانداردهای سبز اروپا</h3> (مصرف بهینه برق و آب، کلاس انرژی برتر اروپایی، کاهش هزینه‌ها و سازگاری کامل با محیط زیست).
+   - بخش پنجم: <h3>راهنمای نگهداری اصولی و افزایش طول عمر قطعات</h3> (نکات تخصصی مراقبت، فیلترها، سیستم خودکار محافظتی و ایمنی AquaControl).
+   - بخش ششم: <h3>جمع‌بندی کارشناسی و ارزش خرید محصول اصل آاگ</h3> (تحلیل ارزش سرمایه‌گذاری بلندمدت و تضمین رضایت خریدار).
+
+۲. نام کامل محصول ({pname}) و عبارت «آاگ» (AEG) را به صورت کاملاً طبیعی، روان و هوشمندانه ۶ الی ۸ بار در طول متن به کار ببرید.
+۳. اصطلاحات مهندسی، تکنولوژی‌های ساخت و نام سیستم‌ها را به صورت بولد (**نام تکنولوژی**) بنویسید.
+۴. پایان‌بندی جملات: ۱۰۰٪ تمامی جملات باید با نقطه پایانی (.) و به صورت کامل و بدون قطع‌شدگی خاتمه یابند.
+۵. لحن متن کاملاً تخصصی، محترمانه، لوکس و معتبر باشد و از اطلاعات فیک خودداری گردد."""
+    else:
+        prompt = f"""شما نویسنده و متخصص ارشد سئو (SEO Content Specialist) و کارشناس نقد و بررسی لوازم خانگی و دیجیتال هستید.
 برای محصول زیر بر اساس مشخصات فنی تایید شده، یک نقد و بررسی جامع، مستند، سئو شده و بسیار جذاب به زبان فارسی بنویسید:
 
 نام دقیق محصول: {pname}
@@ -2219,6 +2253,12 @@ def get_woo_sync_stats() -> dict:
     review_queue = get_woo_review_queue()
     review_count = len(review_queue)
 
+    unsent_count = 0
+    for p in JSON_PRODUCTS:
+        pid = str(p.get("product_id") or p.get("id") or "").strip()
+        if pid and pid not in product_map:
+            unsent_count += 1
+
     settings = get_woo_settings()
 
     return {
@@ -2226,6 +2266,7 @@ def get_woo_sync_stats() -> dict:
         "aeg_protected_count": aeg_protected_count,
         "ready_to_send_count": ready_to_send_count,
         "published_count": published_count,
+        "unsent_count": unsent_count,
         "zero_price_count": zero_price_count,
         "review_count": review_count,
         "root_category_id": settings.get("aikala_root_category_id", 0),
@@ -2235,3 +2276,19 @@ def get_woo_sync_stats() -> dict:
         "auto_sync_enabled": settings.get("auto_sync_enabled", True),
         "ai_provider": settings.get("ai_provider", "gemini")
     }
+
+
+def get_unsent_woo_products() -> List[dict]:
+    """دریافت لیست کالاهایی که تا الان به وب‌سایت ووکامرس ارسال نشده‌اند"""
+    from search_engine import JSON_PRODUCTS, load_json_products
+    if not JSON_PRODUCTS:
+        load_json_products()
+    product_map = get_woo_product_map()
+    if not isinstance(product_map, dict):
+        product_map = {}
+    unsent = []
+    for p in JSON_PRODUCTS:
+        pid = str(p.get("product_id") or p.get("id") or "").strip()
+        if pid and pid not in product_map:
+            unsent.append(p)
+    return unsent
